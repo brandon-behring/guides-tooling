@@ -1,0 +1,305 @@
+% interview-variants.sty - Code/table variants and quick reference environments
+% Part of interview_prep_series
+%
+% Provides:
+%   - Code block variants (sqlcode, pycode)
+%   - Table variants (widetable)
+%   - Quick reference environments (promoted from vol0-macros.sty)
+%
+% These environments are optimized for high-density quick reference material.
+
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{interview-variants}[2026/01/11 Code/Table Variants v1.0]
+
+% Required packages (most already loaded by base preamble)
+\RequirePackage{tcolorbox}
+\RequirePackage{xcolor}
+\RequirePackage{enumitem}
+\newcommand{\interviewvariantupper}{\RaggedRight\sloppy\setlength{\emergencystretch}{1em}}
+
+% Initialize tcolorbox libraries
+\tcbuselibrary{skins,breakable}
+
+% =============================================================================
+% LISTINGS COMPATIBILITY LAYER
+% =============================================================================
+% listings already loaded by interview-preamble-tufte.sty; override settings here
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{blue},
+  commentstyle=\color{gray},
+  stringstyle=\color{orange},
+  showstringspaces=false,
+  breaklines=true,
+  frame=single,
+  numbers=none,
+  tabsize=4,
+  backgroundcolor=\color{gray!5}
+}
+
+% =============================================================================
+% CODE BLOCK VARIANTS (minted-based)
+% =============================================================================
+% Use these for language-specific code with custom defaults
+
+% SQL code blocks (larger font for readability)
+\newminted[sqlcode]{sql}{
+  fontsize=\small,
+  breaklines=true,
+  breakanywhere=false
+}
+
+% Python code blocks (standard size)
+\newminted[pycode]{python}{
+  fontsize=\footnotesize,
+  breaklines=true,
+  breakanywhere=false
+}
+
+% Shell/bash code blocks
+\newminted[bashcode]{bash}{
+  fontsize=\footnotesize,
+  breaklines=true,
+  breakanywhere=false
+}
+
+% JSON code blocks
+\newminted[jsoncode]{json}{
+  fontsize=\footnotesize,
+  breaklines=true,
+  breakanywhere=false
+}
+
+% =============================================================================
+% TABLE VARIANTS
+% =============================================================================
+
+% Wide table (spans text + margin)
+\newenvironment{widetable}{%
+  \begin{fullwidth}
+}{%
+  \end{fullwidth}
+}
+
+% Compact table (reduced spacing)
+\newenvironment{compacttable}{%
+  \renewcommand{\arraystretch}{1.1}%
+  \footnotesize
+}{%
+}
+
+% =============================================================================
+% QUICK REFERENCE COLORS (promoted from vol0-macros.sty)
+% =============================================================================
+% Using warm palette names
+
+\colorlet{formulacolor}{WarmBlue}          % Formulas → structure blue
+\colorlet{decisioncolor}{WarmGold}         % Decision trees → insight gold
+\colorlet{companycolor}{WarmGold}          % Company cards → insight gold
+\colorlet{sixtyseccolor}{WarmPlum}         % 60-second explanations → authority plum
+\colorlet{patterncolor}{WarmTeal}          % Patterns → comparison teal
+
+% =============================================================================
+% FORMULA CARD - Compact formula reference
+% Guard: los-macros.sty may define these first via \NewDocumentEnvironment
+% =============================================================================
+
+\@ifundefined{formulacard}{%
+  \newtcolorbox{formulacard}[1][Formula]{%
+    colback=formulacolor!5,
+    colframe=formulacolor!75!black,
+    fonttitle=\bfseries\small,
+    title={#1},
+    arc=1mm,
+    boxrule=0.4mm,
+    left=1.5mm,
+    right=1.5mm,
+    top=0.8mm,
+    bottom=0.8mm,
+    boxsep=1mm,
+    before skip=2mm,
+    after skip=2mm,
+    breakable,
+    before upper={\interviewvariantupper}
+  }%
+}{}
+
+% Inline formula (for formula tables)
+\newcommand{\inlineformula}[2]{%
+  \textbf{#1}: $#2$%
+}
+
+% =============================================================================
+% DECISION TREE - When to use what
+% =============================================================================
+
+\@ifundefined{decisiontree}{%
+  \newtcolorbox{decisiontree}[1][Decision Tree]{%
+    colback=decisioncolor!10,
+    colframe=decisioncolor!75!black,
+    fonttitle=\bfseries,
+    title={\textbf{?}~#1},
+    arc=2mm,
+    boxrule=0.5mm,
+    left=2.5mm,
+    right=2.5mm,
+    top=1.5mm,
+    bottom=1.5mm,
+    breakable,
+    before upper={\interviewvariantupper}
+  }%
+}{}
+
+% Decision node helpers
+\providecommand{\decision}[1]{\textbf{#1}}
+\providecommand{\outcome}[1]{$\rightarrow$~\textit{#1}}
+\newcommand{\yesno}[2]{%
+  \begin{itemize}[nosep,leftmargin=1em]
+    \item[$\rightarrow$] \textbf{Yes}: #1
+    \item[$\rightarrow$] \textbf{No}: #2
+  \end{itemize}%
+}
+
+% =============================================================================
+% INTERVIEW PATTERN - Framework templates (STAR, etc.)
+% =============================================================================
+
+\newtcolorbox{interviewpattern}[1][Pattern]{%
+  colback=patterncolor!10,
+  colframe=patterncolor!75!black,
+  fonttitle=\bfseries,
+  title={Pattern: #1},
+  arc=2mm,
+  boxrule=0.5mm,
+  left=2.5mm,
+  right=2.5mm,
+  top=1.5mm,
+  bottom=1.5mm,
+  breakable,
+  before upper={\interviewvariantupper}
+}
+
+% STAR components (alternative style)
+\newcommand{\starS}[1]{\textbf{Situation}: #1\\}
+\newcommand{\starT}[1]{\textbf{Task}: #1\\}
+\newcommand{\starA}[1]{\textbf{Action}: #1\\}
+\newcommand{\starR}[1]{\textbf{Result}: #1}
+
+% =============================================================================
+% COMPANY CARD - Company-specific prep focus
+% =============================================================================
+
+\newtcolorbox{companycard}[1][Company]{%
+  colback=companycolor!10,
+  colframe=companycolor!75!black,
+  fonttitle=\bfseries,
+  title={#1},
+  arc=2mm,
+  boxrule=0.5mm,
+  left=2.5mm,
+  right=2.5mm,
+  top=1.5mm,
+  bottom=1.5mm,
+  breakable,
+  before upper={\interviewvariantupper}
+}
+
+% Company card fields
+\newcommand{\companyfocus}[1]{\textbf{Focus}: #1\\}
+\newcommand{\companyformat}[1]{\textbf{Format}: #1\\}
+\newcommand{\companymustknow}[1]{\textbf{Must-Know}: #1}
+
+% =============================================================================
+% 60-SECOND EXPLANATION - Verbal interview explanation
+% =============================================================================
+
+\@ifundefined{sixtysec}{%
+  \newtcolorbox{sixtysec}[1][Concept]{%
+    colback=sixtyseccolor!5,
+    colframe=sixtyseccolor!75!black,
+    fonttitle=\bfseries,
+    title={60-Second: #1},
+    arc=2mm,
+    boxrule=0.5mm,
+    left=2.5mm,
+    right=2.5mm,
+    top=1.5mm,
+    bottom=1.5mm,
+    fontupper=\itshape,
+    breakable,
+    before upper={\interviewvariantupper\itshape}
+  }%
+}{}
+
+% =============================================================================
+% KEY PATTERN - Dense pattern display (for coding/SQL)
+% =============================================================================
+
+\newtcolorbox{keypattern}[1][Pattern]{%
+  colback=patterncolor!5,
+  colframe=patterncolor!75!black,
+  fonttitle=\bfseries\small,
+  title={#1},
+  arc=1mm,
+  boxrule=0.4mm,
+  left=1.5mm,
+  right=1.5mm,
+  top=0.8mm,
+  bottom=0.8mm,
+  boxsep=0.8mm,
+  breakable,
+  before upper={\interviewvariantupper}
+}
+
+% =============================================================================
+% PITFALL BOX - Common mistakes (compact)
+% =============================================================================
+
+\newtcolorbox{pitfall}[1][Pitfall]{%
+  colback=WarmRose!5,
+  colframe=WarmRose!75!black,
+  fonttitle=\bfseries\small,
+  title={#1},
+  arc=1mm,
+  boxrule=0.4mm,
+  left=1.5mm,
+  right=1.5mm,
+  top=0.8mm,
+  bottom=0.8mm,
+  breakable,
+  before upper={\interviewvariantupper}
+}
+
+% =============================================================================
+% QUICK REFERENCE HELPERS
+% =============================================================================
+
+% Section header for cheat sheets
+\newcommand{\qrsection}[1]{%
+  \vspace{0.5em}
+  \noindent\textbf{\large #1}
+  \vspace{0.3em}
+  \hrule
+  \vspace{0.3em}
+}
+
+% Quick glossary entry
+\newcommand{\glossdef}[2]{%
+  \noindent\textbf{#1}: #2\par\smallskip
+}
+
+% Volume map entry (for navigation appendices)
+\newcommand{\volmapentry}[3]{%
+  % #1 = topic, #2 = volume, #3 = chapters/sections
+  \noindent\textbf{#1} \dotfill Vol~#2: #3\par
+}
+
+% =============================================================================
+% COMPARISON TABLE HELPERS
+% =============================================================================
+
+\newcommand{\pro}{\textcolor{WarmGreen}{\textbf{+}}}
+\newcommand{\con}{\textcolor{WarmRose}{\textbf{--}}}
+\newcommand{\neutral}{\textcolor{gray}{\textbf{=}}}
+
+\endinput

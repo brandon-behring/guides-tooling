@@ -1,0 +1,798 @@
+% interview-preamble-tufte.sty
+% Tufte-style dense layout for interview prep guides
+% Maximum information density with margin notes
+%
+% Usage: \usepackage{interview-preamble-tufte}
+% Requires: LuaLaTeX with -shell-escape flag
+%
+% Print/Digital toggle:
+%   \printmodetrue  (before \usepackage) for print variant
+%   \printmodefalse (default) for digital variant
+
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{interview-preamble-tufte}[2025/12/02 Tufte-style Interview Guide Preamble v1.0]
+
+% Default to generated glossaries for the wider repo, but allow guides with a
+% hand-written glossary appendix to opt out before loading this package.
+\@ifundefined{ifguidegeneratedglossaries}{%
+  \newif\ifguidegeneratedglossaries
+  \guidegeneratedglossariestrue
+}{}
+
+% =============================================================================
+% ENGINE DETECTION
+% =============================================================================
+\RequirePackage{iftex}
+\RequireLuaTeX  % Fail with clear error if not LuaLaTeX
+
+% =============================================================================
+% PRINT/DIGITAL TOGGLE
+% =============================================================================
+% Define if not already defined (allows command-line override)
+\@ifundefined{ifprintmode}{%
+  \newif\ifprintmode
+  \printmodefalse  % Default to digital
+}{}
+
+% =============================================================================
+% TUFTE-STYLE GEOMETRY
+% =============================================================================
+\RequirePackage{geometry}
+\geometry{
+    paperwidth=8.5in,
+    paperheight=11in,
+    left=1in,              % Inner margin
+    top=1in,
+    textwidth=4.5in,       % Main text (narrow for density)
+    marginparsep=0.3in,    % Gap between text and margin
+    marginparwidth=1.9in,  % Wide margin for notes/figures
+    textheight=9in,
+    footskip=0.5in,
+    headheight=23pt
+}
+
+% scrbook auto-loads typearea, which recomputes \textheight using its own
+% DIV factor on every later \KOMAoptions{} call and silently discards
+% geometry's textheight. Re-assert at \AtBeginDocument so geometry wins;
+% otherwise typearea clamps text to ~6.45in on 11in paper, leaving ~2.3in
+% of wasted bottom whitespace per page.
+\AtBeginDocument{\geometry{textheight=9in}}
+
+% Tufte canonical: don't stretch inter-paragraph glue to fill the page;
+% let pages end naturally where content does. The original tufte-book
+% class hardcodes this; math-heavy content with frequent theorem/figure
+% breaks looks visibly cleaner without flushbottom glue stretching.
+\raggedbottom
+
+% Full-width length for tables/figures inside \begin{fullwidth}
+% adjustwidth does not update \linewidth, so tables need this explicitly
+\newlength{\fullwidthlen}
+\AtBeginDocument{\setlength{\fullwidthlen}{\dimexpr\textwidth+\marginparwidth+\marginparsep\relax}}
+
+% Global emergency stretch: allows TeX to widen inter-word spaces by up to
+% 1em as a last resort, preventing sub-10pt overfull hbox warnings from
+% Roboto's wide glyphs in narrow 4.5in text columns.
+\setlength{\emergencystretch}{2em}
+
+% =============================================================================
+% FONTS (must come early)
+% =============================================================================
+\RequirePackage{fontspec}
+
+% Define fallback font for symbols not in Roboto (e.g., ★ U+2605)
+\directlua{
+  luaotfload.add_fallback("symbolfallback", {
+    "DejaVu Sans:mode=harf;",
+  })
+}
+
+% Main font: Roboto (modern sans-serif) - 10pt from documentclass
+\setmainfont{Roboto}[
+  UprightFont = *-Regular,
+  BoldFont = *-Bold,
+  ItalicFont = *-Italic,
+  BoldItalicFont = *-BoldItalic,
+  Scale = 1.0,
+  RawFeature={fallback=symbolfallback}
+]
+
+% Monospace font: Source Code Pro - 9pt effective (0.82 scale of 10pt)
+\setmonofont{Source Code Pro}[
+  Scale = 0.82,
+  UprightFont = *-Regular,
+  BoldFont = *-Bold,
+  ItalicFont = *-It,
+  BoldItalicFont = *-BoldIt
+]
+
+% Sans font (for headings): already Roboto as main
+\setsansfont{Roboto}[
+  UprightFont = *-Regular,
+  BoldFont = *-Bold,
+  ItalicFont = *-Italic,
+  BoldItalicFont = *-BoldItalic
+]
+
+% Margin note sizing uses explicit digital sizes so 10pt and 11pt guides share
+% the same compact, readable callout footprint.
+\newcommand{\marginfontsize}{%
+  \ifprintmode
+    \footnotesize
+  \else
+    \fontsize{6.7}{7.6}\selectfont
+  \fi
+}
+\newcommand{\margintitlefontsize}{%
+  \ifprintmode
+    \small
+  \else
+    \fontsize{6.8}{7.4}\selectfont
+  \fi
+}
+\DeclareMathSizes{6.7}{6.7}{5}{5}
+\DeclareMathSizes{6.8}{6.8}{5}{5}
+
+% =============================================================================
+% TYPOGRAPHY
+% =============================================================================
+\RequirePackage[
+  protrusion=true,
+  expansion=true,
+  tracking=smallcaps,
+  % spacing=true,  % Not supported by LuaLaTeX
+  final
+]{microtype}           % Microtypography (kerning, protrusion, expansion)
+
+% Allow punctuation to extend into margins (absorbs micro-overflows)
+\SetProtrusion{encoding=*,family=*}{
+  1={-100,-100},
+  .={0,500},
+  ,={0,500}
+}
+
+% babel + csquotes loaded after minted (see CODE LISTINGS section)
+% to avoid fvextra/csquotes load-order warning
+
+% Line spacing - Balanced for readability (code blocks use separate tight setting)
+\RequirePackage{setspace}
+\setstretch{1.15}  % Body text: comfortable reading (code blocks override to 1.05)
+\RequirePackage{ragged2e}
+
+% Paragraph formatting - TRUE TUFTE STYLE: indent instead of parskip
+\setlength{\parindent}{1em}  % Was 0pt - proper paragraph indents
+\setlength{\parskip}{0pt}    % Was 0.25\baselineskip - no extra space
+
+% =============================================================================
+% COLORS — Warm 6-hue palette (colorblind-safe, desaturated)
+% =============================================================================
+\RequirePackage[dvipsnames,svgnames,x11names,table]{xcolor}
+
+% --- Canonical warm palette (6 semantic families + 3 neutrals) ---
+\definecolor{WarmBlue}{HTML}{3B6FA0}         % Structure, LOS, headings
+\definecolor{WarmRose}{HTML}{C06858}         % Warnings, redflags, mistakes
+\definecolor{WarmGreen}{HTML}{4A7E3F}        % Interview, practice, tips
+\definecolor{WarmPlum}{HTML}{8A4E82}         % Deep dive, authority
+\definecolor{WarmGold}{HTML}{C09840}         % Insight, paradox, bridges
+\definecolor{WarmTeal}{HTML}{4A8C8C}         % Comparison, drills, systems
+\definecolor{CodeBg}{HTML}{F7F5F0}           % Backgrounds (warm off-white)
+\definecolor{CodeFrame}{HTML}{B5B3AA}        % Borders
+\definecolor{DarkText}{HTML}{1A1A19}         % Body text
+
+% --- Backward-compatible aliases (old name → warm palette) ---
+\colorlet{PrimaryBlue}{WarmBlue}
+\colorlet{NoteBlue}{WarmBlue}
+\colorlet{CFABlue}{WarmBlue}
+\colorlet{WarningOrange}{WarmRose}
+\colorlet{CrimsonRed}{WarmRose}
+\colorlet{TipGreen}{WarmGreen}
+\colorlet{ForestGreen}{WarmGreen}
+\colorlet{RoyalPurple}{WarmPlum}
+\colorlet{SunsetOrange}{WarmGold}
+\colorlet{OceanTeal}{WarmTeal}
+\colorlet{SteelBlue}{WarmTeal}
+\colorlet{SaddleBrown}{WarmGold!60!black}
+
+% =============================================================================
+% CODE LISTINGS (minted - Pygments backend) - OPTIMIZED for density
+% =============================================================================
+\RequirePackage{minted}
+
+% Configure minted based on print/digital mode
+\ifprintmode
+  % Print: white background, left border only
+  \setminted{
+    frame=leftline,             % Only left border (was single)
+    framesep=1.5mm,             % Reduced from 2mm
+    bgcolor=white,
+    rulecolor=CodeFrame,
+    fontsize=\footnotesize,     % 9pt code
+    breaklines=true,
+    breakanywhere=false,
+    linenos=true,               % Keep for print reference
+    numbersep=4pt,              % Reduced from 5pt
+    xleftmargin=0pt,            % Reduced from 8pt
+    baselinestretch=1.15,       % Increased from 1.1 (readability)
+    autogobble=true
+  }
+\else
+  % Digital: tinted background, top/bottom lines only
+  \setminted{
+    frame=lines,                % Top/bottom only (modern, saves space)
+    framesep=1mm,               % Reduced from 1.5mm (saves 3pt/block)
+    bgcolor=CodeBg,
+    rulecolor=CodeFrame,
+    fontsize=\footnotesize,     % 9pt code
+    breaklines=true,
+    breakanywhere=false,
+    linenos=false,              % NO line numbers (saves 15pt per block!)
+    xleftmargin=0pt,            % Reduced from 8pt
+    baselinestretch=1.05,       % Further reduced from 1.10 (saves 2-3pt per block)
+    autogobble=true
+  }
+\fi
+
+\usemintedstyle{friendly}  % Good balance of color and readability
+
+% Listings compatibility (some chapters use lstlisting instead of minted)
+\RequirePackage{listings}
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{WarmBlue},
+  commentstyle=\color{gray},
+  stringstyle=\color{WarmGold},
+  showstringspaces=false,
+  breaklines=true,
+  frame=single,
+  numbers=none,
+  tabsize=4,
+  backgroundcolor=\color{CodeBg}
+}
+
+\RequirePackage[english]{babel}      % Language support (after minted/fvextra)
+\RequirePackage{csquotes}            % Smart quotes (must follow fvextra)
+
+% Inline code
+\newcommand{\code}[1]{\texttt{#1}}
+
+% Code block caption/title styling
+\newcommand{\codecaption}[1]{%
+  \par\vspace{-0.3\baselineskip}%
+  {\footnotesize\color{WarmBlue!80!black}\textbf{#1}}%
+  \par\vspace{-0.2\baselineskip}%
+}
+
+% Spacing after code blocks
+\newcommand{\postcode}{\vspace{-0.3\baselineskip}}
+
+% =============================================================================
+% MARGIN NOTE COMMANDS (Tufte-style)
+% =============================================================================
+\RequirePackage{changepage}  % For fullwidth environment
+\RequirePackage{marginnote}  % Works inside tcolorbox/floats (unlike \marginpar)
+
+% Save package's \marginnote before we redefine it
+\let\pkgmarginnote\marginnote
+
+% Basic sidenote - uses pkgmarginnote to work inside tcolorbox
+\newcommand{\sidenote}[1]{%
+  \pkgmarginnote{%
+    \footnotesize\raggedright%  % 9pt instead of 11pt
+    \color{WarmBlue!70!black}%
+    #1%
+    \color{DarkText}%
+  }%
+}
+
+% Margin figure
+\newcommand{\marginfigure}[2][width=\marginparwidth]{%
+  \pkgmarginnote{\centering\includegraphics[#1]{#2}}%
+}
+
+% Margin table environment
+\newenvironment{margintable}
+  {\pkgmarginnote\bgroup\marginfontsize\centering}
+  {\egroup}
+
+% Full-width environment (for large figures/tables spanning text + margin)
+\newenvironment{fullwidth}
+  {\begin{adjustwidth}{}{-\marginparwidth-\marginparsep}}
+  {\end{adjustwidth}}
+
+% =============================================================================
+% CALLOUT BOXES (tcolorbox) - BOTH MARGIN AND MAIN TEXT
+% =============================================================================
+\RequirePackage[breakable,skins]{tcolorbox}
+
+% Conditional backgrounds based on print mode
+\ifprintmode
+  \newcommand{\notebg}{white}
+  \newcommand{\warnbg}{white}
+  \newcommand{\tipbg}{white}
+\else
+  \colorlet{notebg}{WarmBlue!5}
+  \colorlet{warnbg}{WarmRose!5}
+  \colorlet{tipbg}{WarmGreen!5}
+\fi
+
+% --- MARGIN CALLOUT BOXES (compact, for margins) ---
+
+\newtcolorbox{marginbox}[2][Note]{
+  breakable=false,
+  enhanced,
+  colframe=#2,
+  colback=\ifprintmode white\else #2!3\fi,  % More subtle (was 5%)
+  coltitle=DarkText,
+  fonttitle=\bfseries\margintitlefontsize,
+  before title={\RaggedRight},
+  title=#1,
+  leftrule=1.5pt,
+  rightrule=0pt,
+  toprule=0pt,
+  bottomrule=0pt,
+  arc=0pt,
+  left=0pt,
+  right=0pt,
+  top=0pt,
+  bottom=0pt,
+  boxsep=0pt,
+  width=\marginparwidth,
+  fontupper=\marginfontsize,
+  before upper={\RaggedRight\sloppy\emergencystretch=3em\relax},
+  titlerule=0mm
+}
+
+% Convenience commands for margin callouts (using pkgmarginnote for tcolorbox safety)
+\renewcommand{\marginnote}[2][Note]{%
+  \pkgmarginnote{\begin{marginbox}[#1]{WarmBlue}#2\end{marginbox}}%
+}
+
+\newcommand{\marginwarning}[2][Warning]{%
+  \pkgmarginnote{\begin{marginbox}[#1]{WarmRose}#2\end{marginbox}}%
+}
+
+\newcommand{\margintip}[2][Tip]{%
+  \pkgmarginnote{\begin{marginbox}[#1]{WarmGreen}#2\end{marginbox}}%
+}
+
+% --- MAIN TEXT CALLOUT BOXES (compact, for important content) ---
+
+% Unified compact style for all callout boxes (PHASE 3)
+\tcbset{
+  callout-compact/.style={
+    breakable,
+    enhanced,
+    arc=0pt,
+    leftrule=3pt,
+    rightrule=0pt,
+    toprule=0pt,
+    bottomrule=0pt,
+    left=2pt,          % Reduced from 3pt
+    right=2pt,         % Reduced from 3pt
+    top=1pt,           % Reduced from 2pt
+    bottom=1pt,        % Reduced from 2pt
+    boxsep=0pt,
+    toptitle=0.5pt,    % Space above title (was titlesep)
+    coltitle=DarkText,
+    fonttitle=\bfseries,
+    before title={\RaggedRight},
+    before upper={\RaggedRight\sloppy\emergencystretch=1em\relax}
+  }
+}
+
+% Note box (blue) - COMPACT
+\newtcolorbox{notebox}[1][Note]{
+  callout-compact,
+  colframe=WarmBlue,
+  colback=\ifprintmode white\else WarmBlue!3\fi,
+  title=#1
+}
+
+% Warning box (rose) - COMPACT
+\newtcolorbox{warnbox}[1][Warning]{
+  callout-compact,
+  colframe=WarmRose,
+  colback=\ifprintmode white\else WarmRose!3\fi,
+  title=#1
+}
+
+% Tip box (green) - COMPACT
+\newtcolorbox{tipbox}[1][Tip]{
+  callout-compact,
+  colframe=WarmGreen,
+  colback=\ifprintmode white\else WarmGreen!3\fi,
+  title=#1
+}
+
+% Example box (blue) - COMPACT
+\newtcolorbox{examplebox}[1][Example]{
+  callout-compact,
+  colframe=WarmBlue,
+  colback=\ifprintmode white\else WarmBlue!3\fi,
+  title=#1
+}
+
+% =============================================================================
+% TABLES
+% =============================================================================
+\RequirePackage{booktabs}            % Professional tables (\toprule, \midrule, \bottomrule)
+\RequirePackage{tabularx}            % Flexible column widths
+\RequirePackage{longtable}           % Multi-page tables
+\RequirePackage{array}               % Extended column formatting
+\RequirePackage{multicol}            % Multi-column layouts (for appendices)
+\RequirePackage{multirow}            % Multi-row table cells
+
+% Default table settings - COMPACT
+\renewcommand{\arraystretch}{1.2}    % Reduced from 1.3
+
+% =============================================================================
+% MATH
+% =============================================================================
+\RequirePackage{amsmath,amssymb,amsthm}
+\RequirePackage{mathtools}
+
+% Euro symbol (LuaLaTeX + fontspec handles Unicode natively)
+\providecommand{\euro}{€}
+
+% Reduce space around display equations (50% reduction from default 12pt)
+\AtBeginDocument{
+  \setlength\abovedisplayskip{6pt plus 1pt minus 2pt}
+  \setlength\belowdisplayskip{6pt plus 1pt minus 2pt}
+  \setlength\abovedisplayshortskip{3pt plus 1pt minus 1pt}
+  \setlength\belowdisplayshortskip{3pt plus 1pt minus 1pt}
+  \setlength{\jot}{1.5pt}  % Space between align rows (reduced from 2pt)
+}
+
+% Theorem environments
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[chapter]
+\newtheorem{theorem}{Theorem}[chapter]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+
+\theoremstyle{remark}
+\newtheorem*{remark}{Remark}
+
+% =============================================================================
+% BIBLIOGRAPHY (biblatex + biber)
+% =============================================================================
+\RequirePackage[
+  backend=biber,
+  style=authoryear,          % Author-year citations: (Rubin, 1974)
+  sorting=nyt,               % Sort by name-year-title
+  maxbibnames=99,
+  giveninits=true,
+  uniquename=false,
+  uniquelist=false
+]{biblatex}
+
+% =============================================================================
+% GLOSSARY
+% =============================================================================
+\ifguidegeneratedglossaries
+  \RequirePackage[
+    toc,                       % Add to table of contents
+    acronym,                   % Support acronyms
+    nonumberlist,              % No page numbers in glossary
+    nogroupskip                % No extra space between groups
+  ]{glossaries}
+  \makeglossaries
+\fi
+
+% =============================================================================
+% INDEX
+% =============================================================================
+\RequirePackage{makeidx}
+\makeindex
+
+% =============================================================================
+% FIGURES AND GRAPHICS
+% =============================================================================
+\RequirePackage{graphicx}
+\RequirePackage{float}               % Better float placement [H]
+\RequirePackage{caption}
+\RequirePackage{subcaption}          % Subfigures
+\RequirePackage{tikz}                % Diagrams (algorithm traces, data structures)
+\usetikzlibrary{arrows.meta, positioning, shapes.geometric, shapes.misc, fit, calc}
+\RequirePackage{pgfplots}\pgfplotsset{compat=1.17,compat/show suggested version=false}
+
+% Caption styling - COMPACT
+\captionsetup{
+  font=small,
+  labelfont=bf,
+  format=hang,
+  margin=6pt,              % Reduced from 8pt
+  skip=4pt,                % Reduced from default 8pt
+  singlelinecheck=false,
+  hypcap=false
+}
+
+% =============================================================================
+% LISTS - COMPACT
+% =============================================================================
+\RequirePackage[shortlabels]{enumitem}
+
+% Tighter list spacing for density (PHASE 3)
+\setlist{
+  topsep=0.5pt,        % Reduced from 1pt
+  itemsep=1.5pt,       % Reduced from 2pt
+  parsep=0pt,          % Keep at 0pt
+  partopsep=0pt,
+  leftmargin=*,
+  listparindent=0pt
+}
+
+% Fix for description lists with long labels (avoids negative labelwidth warning)
+\setlist[description]{style=nextline}
+
+% =============================================================================
+% CROSS-REFERENCES
+% =============================================================================
+\RequirePackage{varioref}            % Smart page references
+
+% =============================================================================
+% HYPERLINKS (must be loaded late)
+% =============================================================================
+\RequirePackage[
+  colorlinks=true,
+  linkcolor=black,
+  urlcolor=WarmBlue,
+  citecolor=WarmGreen!80!black,
+  pdfusetitle,
+  bookmarks=true,
+  bookmarksnumbered=true,
+  pdfstartview=FitH,          % Zoom to fit width
+  pdfdisplaydoctitle=true,    % Show title in window
+  pdfencoding=unicode         % Better search
+]{hyperref}
+
+% Print mode: disable colored links
+\ifprintmode
+  \hypersetup{
+    colorlinks=false,
+    linkbordercolor=white,
+    urlbordercolor=white,
+    citebordercolor=white,
+    pdfborder={0 0 0}
+  }
+\fi
+
+\RequirePackage[capitalise,noabbrev]{cleveref}  % Smart cross-references
+
+\pdfstringdefDisableCommands{%
+  \def\mathbb#1{#1}%
+  \def\mathcal#1{#1}%
+  \def\mathbf#1{#1}%
+  \def\boldsymbol#1{#1}%
+  \def\bm#1{#1}%
+  \def\hat#1{#1}%
+  \def\widehat#1{#1}%
+  \def\bar#1{#1}%
+  \def\overline#1{#1}%
+  \def\tilde#1{#1}%
+  \def\widetilde#1{#1}%
+  \def\underline#1{#1}%
+  \def\textbf#1{#1}%
+  \def\textit#1{#1}%
+  \def\texttt#1{#1}%
+  \def\textsc#1{#1}%
+  \def\emph#1{#1}%
+  \def\varepsilon{epsilon}%
+  \def\epsilon{epsilon}%
+  \def\gamma{gamma}%
+  \def\alpha{alpha}%
+  \def\beta{beta}%
+  \def\delta{delta}%
+  \def\eta{eta}%
+  \def\lambda{lambda}%
+  \def\mu{mu}%
+  \def\pi{pi}%
+  \def\rho{rho}%
+  \def\sigma{sigma}%
+  \def\tau{tau}%
+  \def\theta{theta}%
+  \def\phi{phi}%
+  \def\omega{omega}%
+  \def\Pi{Pi}%
+  \def\Delta{Delta}%
+  \def\Pr{Pr}%
+  \def\E{E}%
+  \def\doteq{:=}%
+  \def\mid{|}%
+  \def\to{->}%
+  \def\rightarrow{->}%
+  \def\leftarrow{<-}%
+  \def\leftrightarrow{<->}%
+  \def\mapsto{->}%
+  \def\argmax{arg max}%
+  \def\argmin{arg min}%
+  \def\times{x}%
+  \def\cdot{*}%
+  \def\ldots{...}%
+}
+
+% =============================================================================
+% KOMA-SCRIPT PAGE LAYOUT ADJUSTMENTS
+% =============================================================================
+% These should be set in the main document, not the preamble
+% But we provide defaults via KOMA options
+
+% Print mode adjustments (called from main doc if needed)
+\newcommand{\setprintlayout}{%
+  \KOMAoptions{
+    twoside=semi,
+    BCOR=10mm
+  }%
+}
+
+% Digital mode adjustments (called from main doc if needed)
+\newcommand{\setdigitallayout}{%
+  \KOMAoptions{
+    twoside=false,
+    BCOR=0mm
+  }%
+}
+
+% =============================================================================
+% HEADING STYLES (KOMA-Script) - TUFTE-STYLE ITALIC
+% =============================================================================
+% Tufte-style italic headings with color
+\addtokomafont{chapter}{\color{WarmBlue}\itshape}
+\addtokomafont{section}{\color{WarmBlue!90!black}\itshape}
+\addtokomafont{subsection}{\color{WarmBlue!80!black}\itshape}
+
+% Reduce spacing around headings for density (PHASE 3: FURTHER SAVINGS)
+\RedeclareSectionCommand[
+  beforeskip=1.0\baselineskip,  % Reduced from 1.2
+  afterskip=0.3\baselineskip    % Reduced from 0.4
+]{chapter}
+
+\RedeclareSectionCommand[
+  beforeskip=0.6\baselineskip,  % Reduced from 0.8
+  afterskip=0.2\baselineskip    % Reduced from 0.25
+]{section}
+
+\RedeclareSectionCommand[
+  beforeskip=0.6\baselineskip,  % Keep at 0.6 (already optimized)
+  afterskip=0.15\baselineskip   % Keep at 0.15
+]{subsection}
+
+% =============================================================================
+% CONVENIENCE COMMANDS
+% =============================================================================
+
+% Interview tip callout
+\newcommand{\interviewtip}[1]{%
+  \begin{tipbox}[Interview Tip]
+    #1
+  \end{tipbox}
+}
+
+% Common mistake callout
+\newcommand{\commonmistake}[1]{%
+  \begin{warnbox}[Common Mistake]
+    #1
+  \end{warnbox}
+}
+
+% Key insight callout
+\newcommand{\keyinsight}[1]{%
+  \begin{notebox}[Key Insight]
+    #1
+  \end{notebox}
+}
+
+% Complexity notation
+\newcommand{\bigO}[1]{\ensuremath{\mathcal{O}(#1)}}
+\newcommand{\bigTheta}[1]{\ensuremath{\Theta(#1)}}
+\newcommand{\bigOmega}[1]{\ensuremath{\Omega(#1)}}
+
+% =============================================================================
+% HEADERS (scrlayer-scrpage) - Abbreviated format
+% =============================================================================
+\RequirePackage[headsepline]{scrlayer-scrpage}
+\pagestyle{scrheadings}
+\automark[chapter]{chapter}
+
+% scrbook's default \chaptermark prepends the chapter number to \leftmark
+% (e.g. "3. TF2: ..."). Combined with \thechapter in \ohead below, this
+% produces double-numbered headers like "3 · 3. TF2: ...". Strip the
+% auto-prefix so headers render the documented "[N] · [Title]" format.
+\renewcommand*{\chaptermark}[1]{\markboth{#1}{}}
+
+% Volume short name for header (defined in each guide.tex)
+\providecommand{\volumeshort}{}
+
+% Format: "ML Foundations | 12 · Bias-Variance"
+\ihead{\ifx\volumeshort\empty\else\footnotesize\volumeshort\fi}
+\chead{}
+\ohead{\footnotesize\textit{\thechapter~·~\leftmark}}
+\ifoot{} \cfoot{\pagemark} \ofoot{}
+
+% KOMA-Script's tocbasic page-number boxes are sized by a reference digit.
+% Roboto's proportional digits overflow by 1.3--5.1pt on 3-digit pages.
+% Widen the page-number column for all TOC entry levels.
+\DeclareTOCStyleEntry[pagenumberwidth=4em]{tocline}{chapter}
+\DeclareTOCStyleEntry[pagenumberwidth=2.5em]{tocline}{section}
+\DeclareTOCStyleEntry[pagenumberwidth=2.5em]{tocline}{subsection}
+% Chapter TOC entries use bold 12pt Roboto, which needs more headroom
+% than 4em at 10pt base. Override via LaTeX's \@pnumwidth as fallback.
+\makeatletter
+\renewcommand{\@pnumwidth}{2.5em}
+\makeatother
+
+% =============================================================================
+% DOCUMENT METADATA COMMANDS
+% =============================================================================
+% Define with \providecommand so guides can override with \renewcommand
+
+\providecommand{\guidetitle}{Guide Title}
+\providecommand{\guidesubtitle}{Subtitle}
+\providecommand{\guideauthor}{Author}
+\providecommand{\guideversion}{1.0}
+\providecommand{\guidedate}{\today}
+\providecommand{\guideedition}{Digital}
+
+% =============================================================================
+% PROFESSIONAL COVER PAGE
+% =============================================================================
+% Extracted from Vol 4 as canonical implementation
+
+\newcommand{\makeguidecover}{%
+  \begin{titlepage}
+    \centering
+    \vspace*{2cm}
+
+    {\Huge\bfseries\color{WarmBlue}\guidetitle\par}
+
+    \vspace{0.5cm}
+    {\Large\guidesubtitle\par}
+
+    \vspace{1cm}
+    {\large Interview Prep Series\par}
+
+    \vspace{2cm}
+    {\large\guideauthor\par}
+
+    \vfill
+
+    {\normalsize Version \guideversion\par}
+    {\normalsize\guidedate\par}
+
+    \vspace{1cm}
+
+    \ifprintmode
+      {\small\textit{Print Edition}\par}
+    \else
+      {\small\textit{\guideedition\ Edition}\par}
+    \fi
+  \end{titlepage}
+}
+
+% =============================================================================
+% CROSS-VOLUME REFERENCES
+% =============================================================================
+% Dual-optimized: clickable in PDF, readable in print
+
+% \volref{volume}{reference} - Simple text reference
+\newcommand{\volref}[2]{%
+  \textit{$\rightarrow$~Vol~#1: #2}%
+}
+
+% \volreflink{volume}{reference}{label} - With internal hyperlink
+\newcommand{\volreflink}[3]{%
+  \hyperref[#3]{\textit{$\rightarrow$~Vol~#1: #2}}%
+}
+
+% =============================================================================
+% BACKWARD COMPATIBILITY - Fallback for non-Tufte layouts
+% =============================================================================
+% If these commands are used in content compiled with standard preamble,
+% they will gracefully degrade to reasonable alternatives
+
+% (Not needed here since this IS the Tufte preamble, but defined for clarity)
+
+% =============================================================================
+% END OF PREAMBLE
+% =============================================================================
+\endinput

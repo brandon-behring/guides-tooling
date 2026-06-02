@@ -1,0 +1,130 @@
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{{{EXTENSIONS_STY}}}[{{DATE}} {{GUIDE_NAME}} Extensions v1.0]
+
+% =============================================================================
+% MODULE / LESSON HEADERS
+% =============================================================================
+% \lessonheader{L1}{Title}{One-line summary}
+\newcommand{\lessonheader}[3]{%
+    \chapter{#1: #2}%
+    \label{ch:#1}%
+    \textit{#3}\par\vspace{0.5em}%
+}
+% Legacy alias
+\let\moduleheader\lessonheader
+
+% =============================================================================
+% RECALL BOX (brief recap of prior concepts)
+% =============================================================================
+\tcbset{
+    recallbox/.style={
+        colback=CodeBg,
+        colframe=SteelBlue,
+        fonttitle=\bfseries,
+        title=Recall,
+        boxrule=0.6pt,
+        left=4pt, right=4pt, top=4pt, bottom=4pt,
+        breakable
+    }
+}
+
+% =============================================================================
+% CHECKPOINT BOX (active recall questions per lesson)
+% =============================================================================
+\tcbset{
+    checkpointbox/.style={
+        colback=white,
+        colframe=ForestGreen,
+        fonttitle=\bfseries,
+        title=Lesson Checkpoint,
+        boxrule=1pt,
+        left=4pt, right=4pt, top=4pt, bottom=4pt,
+        breakable
+    }
+}
+
+% =============================================================================
+% NARRATIVE BRIDGE (concept maps between lessons)
+% =============================================================================
+\tcbset{
+    narrativebox/.style={
+        colback=PrimaryBlue!5,
+        colframe=PrimaryBlue!30,
+        fonttitle=\bfseries\itshape,
+        boxrule=0pt,
+        borderline west={2pt}{0pt}{PrimaryBlue!40},
+        left=8pt, right=4pt, top=4pt, bottom=4pt,
+        breakable
+    }
+}
+
+% =============================================================================
+% CONCEPT FRAMING (What/Why before code)
+% =============================================================================
+\tcbset{
+    conceptbox/.style={
+        colback=PrimaryBlue!3,
+        colframe=PrimaryBlue,
+        fonttitle=\bfseries,
+        title=Key Concept,
+        boxrule=0.8pt,
+        left=4pt, right=4pt, top=4pt, bottom=4pt,
+        breakable
+    }
+}
+
+% =============================================================================
+% DECISION FRAMEWORK
+% =============================================================================
+\tcbset{
+    decisionbox/.style={
+        colback=white,
+        colframe=SunsetOrange,
+        fonttitle=\bfseries,
+        title=Decision Framework,
+        boxrule=1pt,
+        left=4pt, right=4pt, top=4pt, bottom=4pt,
+        arc=2mm,
+        breakable
+    }
+}
+
+% =============================================================================
+% DEBUG WORKFLOW
+% =============================================================================
+\tcbset{
+    debugbox/.style={
+        colback=CrimsonRed!3,
+        colframe=CrimsonRed,
+        fonttitle=\bfseries\ttfamily,
+        boxrule=0.8pt,
+        left=4pt, right=4pt, top=4pt, bottom=4pt,
+        breakable
+    }
+}
+
+% =============================================================================
+% API BOX (API notes and external service details)
+% =============================================================================
+\tcbset{
+    apibox/.style={
+        colback=CodeBg,
+        colframe=SteelBlue,
+        fonttitle=\bfseries\ttfamily,
+        boxrule=0.6pt,
+        left=4pt, right=4pt, top=4pt, bottom=4pt,
+        breakable
+    }
+}
+
+% =============================================================================
+% MARGIN NOTE SHORTCUTS
+% =============================================================================
+\newcommand{\interviewmargin}[1]{\marginnote[Interview]{#1}}
+\newcommand{\crossrefmargin}[1]{\marginnote[Cross-Ref]{#1}}
+\newcommand{\patternmargin}[1]{\marginnote[Pattern]{#1}}
+\newcommand{\warningmargin}[1]{\marginwarning[Warning]{#1}}
+\newcommand{\practicemargin}[1]{\marginnote[Practice]{#1}}
+\newcommand{\formulamargin}[1]{\marginnote[Formula]{#1}}
+
+\endinput

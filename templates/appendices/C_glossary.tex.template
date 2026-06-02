@@ -1,0 +1,11 @@
+% Appendix C: Glossary
+% Course: {{GUIDE_NAME}}
+
+\chapter{Glossary}
+\label{app:glossary}
+
+% Terms are added as chapters are authored.
+% Format: \term[term-id]{Term Name}{Definition text.}
+%
+% Example:
+% \term[api-key]{API Key}{A secret credential used to authenticate requests to an API endpoint.}

@@ -1,0 +1,954 @@
+% los-macros.sty - Learning Outcome Statement macros for CFA-style interview prep
+% Part of interview_prep_series
+%
+% Provides:
+%   \los{ID}{level}{statement} - Learning Outcome Statement
+%   \term{name}{definition} - Term definition (extractable for cards)
+%   \begin{interviewcontext} - Interview context box
+%   \begin{redflag} - Common mistake warning
+%   \begin{problem}[LOS-ID] - Practice problem
+%   \begin{vignette}[Title] - CFA-style case study
+%   \begin{solution} - Solution block
+
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{los-macros}[2025/12/26 LOS macros for interview prep]
+
+% Required packages
+\RequirePackage{tcolorbox}
+\RequirePackage{xcolor}
+\RequirePackage{makeidx}
+\RequirePackage{enumitem}
+\RequirePackage{xparse}  % For two-optional-argument environments (Phase 6)
+
+% Math operators (requires amsmath, loaded in interview-preamble-tufte.sty)
+\providecommand{\argmin}{\operatorname*{arg\,min}}
+\providecommand{\argmax}{\operatorname*{arg\,max}}
+\newcommand{\lossloppyupper}{\RaggedRight\sloppy\setlength{\emergencystretch}{2em}}
+
+% ============================================================================
+% COLOR ALIASES (resolve into warm palette from interview-preamble-tufte.sty)
+% ============================================================================
+
+\colorlet{losblue}{WarmBlue}                   % LOS headings → structure blue
+\colorlet{interviewgreen}{WarmGreen}           % Interview context → practice green
+\colorlet{redflagred}{WarmRose}                % Warnings → warm rose
+\colorlet{problemgray}{CodeBg}                 % Problem background → warm off-white
+\colorlet{vignetteyellow}{WarmGold!15!white}   % Case study background → subtle gold
+\colorlet{deepdivepurple}{WarmPlum}            % Deep dive → authority plum
+\colorlet{codebg}{CodeBg}                      % Code block background → warm off-white
+
+% ============================================================================
+% LEARNING OUTCOME STATEMENTS
+% ============================================================================
+
+% \los{ID}{level}{statement}
+% Canonical 10 levels (see docs/standards/00_universal/learning_outcomes.md):
+%   define, explain, calculate, compare, analyze, evaluate, design, apply, debug, trace
+% Machine-readable mirror at shared/config/canonical_values.yaml (bloom_levels key).
+\newcommand{\los}[3]{%
+  \item[\textcolor{losblue}{\textbf{LOS #1}}] %
+  (\textit{#2}): #3%
+  \index{LOS!#1}%
+  \label{los:#1}%
+}
+
+% Environment for chapter LOS list
+\newenvironment{learningoutcomes}{%
+  \subsection*{Learning Outcomes}
+  After completing this reading, you should be able to:
+  \begin{description}[leftmargin=1cm, labelindent=0cm, font=\normalfont]
+}{%
+  \end{description}
+}
+
+% ============================================================================
+% TERM DEFINITIONS (extractable for Anki cards)
+% ============================================================================
+
+% \term[LOS]{name}{definition}
+% Optional LOS parameter for card extraction traceability
+% Examples:
+%   \term{CUPED}{Definition...}           - backward compatible
+%   \term[EXP-8.1]{CUPED}{Definition...}  - with LOS reference
+\newcommand{\term}[3][]{%
+  \textbf{#2}\index{#2}: #3%
+  % LOS #1 captured for extraction but not rendered
+}
+
+% Inline term reference
+\newcommand{\termref}[1]{%
+  \textit{#1}\index{#1}%
+}
+
+% ============================================================================
+% INTERVIEW CONTEXT BOX
+% ============================================================================
+
+% \begin{interviewcontext}[Title][LOS-ID]
+% Two optional arguments: #1 = title, #2 = LOS (for extraction, not rendered)
+\NewDocumentEnvironment{interviewcontext}{O{Interview Context} O{}}{%
+  \begin{tcolorbox}[%
+    colback=interviewgreen!5,
+    colframe=interviewgreen!75!black,
+    fonttitle=\bfseries,
+    title={#1},
+    arc=2mm,
+    boxrule=0.5mm,
+    left=2.5mm,
+    right=2.5mm,
+    top=1.5mm,
+    bottom=1.5mm,
+    breakable,
+    before upper={\lossloppyupper}
+  ]
+}{%
+  \end{tcolorbox}%
+  % #2 (LOS) captured for extraction but not rendered
+}
+
+% ============================================================================
+% RED FLAG / COMMON MISTAKE BOX
+% ============================================================================
+
+% \begin{redflag}[Title][LOS-ID]
+% Two optional arguments: #1 = title, #2 = LOS (for extraction, not rendered)
+\NewDocumentEnvironment{redflag}{O{Common Mistake} O{}}{%
+  \begin{tcolorbox}[%
+    colback=redflagred!5,
+    colframe=redflagred!75!black,
+    fonttitle=\bfseries,
+    title={\textbf{Warning:} #1},
+    arc=2mm,
+    boxrule=0.5mm,
+    left=2.5mm,
+    right=2.5mm,
+    top=1.5mm,
+    bottom=1.5mm,
+    breakable,
+    before upper={\lossloppyupper}
+  ]
+}{%
+  \end{tcolorbox}%
+  % #2 (LOS) captured for extraction but not rendered
+}
+
+% ============================================================================
+% DEEP DIVE BOX (Technical Details)
+% ============================================================================
+
+\newtcolorbox{deepdive}[1][Deep Dive]{%
+  colback=deepdivepurple!5,
+  colframe=deepdivepurple!75!black,
+  fonttitle=\bfseries,
+  title={\texttt{>>}~#1},
+  arc=2mm,
+  boxrule=0.5mm,
+  left=3mm,
+  right=3mm,
+  top=2mm,
+  bottom=2mm,
+  breakable,
+  before upper={\lossloppyupper}
+}
+
+% ============================================================================
+% PRACTICE PROBLEMS (LeetCode-style)
+% ============================================================================
+
+\newcounter{problemcounter}[chapter]
+\renewcommand{\theproblemcounter}{\thechapter.\arabic{problemcounter}}
+
+% \begin{problem}[Title][LOS-ID][Difficulty][Scaffolding]
+% Four optional arguments:
+%   #1 = title (rendered in box header)
+%   #2 = LOS (for extraction, not rendered)
+%   #3 = difficulty: foundation | standard | stretch (rendered as colored tag)
+%   #4 = scaffolding: full | partial | none (for WFP progression tracking)
+%        full = worked example (all steps shown)
+%        partial = faded example (some steps blanked)
+%        none = independent practice (default, backward-compatible)
+% Research: Kapur (2008) productive failure; Bjork (1994) desirable difficulties;
+%           Sweller (2011) CLT; Renkl (2002) fading worked examples
+\NewDocumentEnvironment{problem}{O{} O{} O{} O{}}{%
+  \refstepcounter{problemcounter}%
+  \begin{tcolorbox}[%
+    colback=problemgray,
+    colframe=black!50,
+    fonttitle=\bfseries,
+    title={Problem \theproblemcounter\ifx&#1&\else{ [#1]}\fi%
+      \ifx&#3&\else%
+        \hfill{\small\textsc{#3}}%
+      \fi%
+      \ifx&#4&\else%
+        \hfill{\small\textsf{[#4]}}%
+      \fi},
+    arc=1mm,
+    boxrule=0.3mm,
+    left=2.5mm,
+    right=2.5mm,
+    top=1.5mm,
+    bottom=1.5mm,
+    breakable,
+    before upper={\lossloppyupper}
+  ]
+}{%
+  \end{tcolorbox}%
+  % #2 (LOS) and #3 (difficulty) captured for extraction
+}
+
+% ============================================================================
+% VIGNETTE / CASE STUDY (CFA-style)
+% ============================================================================
+
+\newcounter{vignettecounter}[chapter]
+\renewcommand{\thevignettecounter}{\thechapter.\arabic{vignettecounter}}
+
+% \begin{vignette}[Title][LOS-ID]
+% Two optional arguments: #1 = title, #2 = LOS (for extraction, not rendered)
+\NewDocumentEnvironment{vignette}{O{Case Study} O{}}{%
+  \refstepcounter{vignettecounter}%
+  \begin{tcolorbox}[%
+    colback=vignetteyellow,
+    colframe=black!50,
+    fonttitle=\bfseries,
+    title={Vignette \thevignettecounter: #1},
+    arc=1mm,
+    boxrule=0.3mm,
+    breakable
+  ]
+}{%
+  \end{tcolorbox}%
+  % #2 (LOS) captured for extraction but not rendered
+}
+
+% ============================================================================
+% SOLUTION BLOCK
+% ============================================================================
+
+\newcounter{substepcounter}
+\newenvironment{solution}{%
+  \par\noindent\textbf{Solution:}\par\nopagebreak
+  \setcounter{substepcounter}{0}%
+  \begin{quote}
+}{%
+  \end{quote}
+}
+
+% \substep{label}{content} — labeled sub-goals within solutions
+% Research: Catrambone (1998) — sub-goal labels improve transfer 25-40%
+% Auto-numbers within each solution environment
+\newcommand{\substep}[2]{%
+  \stepcounter{substepcounter}%
+  \par\noindent\textbf{Step \thesubstepcounter: #1}\par
+  #2\par\medskip
+}
+
+% ============================================================================
+% DRILL (Quick Calculation Practice)
+% ============================================================================
+
+\colorlet{drillcyan}{WarmTeal!12!white}       % Drill background → subtle teal
+
+\newcounter{drillcounter}[chapter]
+\renewcommand{\thedrillcounter}{\thechapter.\arabic{drillcounter}}
+
+% Internal commands for drill content
+\newcommand{\drillprompt}[1]{\textbf{Prompt:} #1\par\smallskip}
+\newcommand{\drillanswer}[1]{\textbf{Answer:} #1\par\smallskip}
+\newcommand{\technique}[1]{\textit{Technique:} #1}
+
+% \begin{drill}[LOS-ID]
+\newenvironment{drill}[1][]{%
+  \refstepcounter{drillcounter}%
+  \begin{tcolorbox}[%
+    colback=drillcyan,
+    colframe=black!40,
+    fonttitle=\bfseries,
+    title={Drill \thedrillcounter\ifx&#1&\else{ [#1]}\fi},
+    arc=1mm,
+    boxrule=0.3mm,
+    left=2.5mm,
+    right=2.5mm,
+    top=1.5mm,
+    bottom=1.5mm,
+    breakable,
+    before upper={\lossloppyupper}
+  ]
+}{%
+  \end{tcolorbox}
+}
+
+% ============================================================================
+% INTERVIEW QUESTION BOX
+% ============================================================================
+
+\newtcolorbox{interviewquestion}[1][Interview Question]{%
+  colback=interviewgreen!5,
+  colframe=interviewgreen!75!black,
+  fonttitle=\bfseries,
+  title={\textbf{Interview:} #1},
+  arc=2mm,
+  boxrule=0.5mm,
+  left=3mm,
+  right=3mm,
+  top=2mm,
+  bottom=2mm,
+  breakable,
+  before upper={\lossloppyupper}
+}
+
+% ============================================================================
+% KEY TAKEAWAYS BOX
+% ============================================================================
+
+\newtcolorbox{keytakeaways}{%
+  colback=losblue!5,
+  colframe=losblue!75!black,
+  fonttitle=\bfseries,
+  title={Key Takeaways},
+  arc=2mm,
+  boxrule=0.5mm,
+  left=2.5mm,
+  right=2.5mm,
+  top=1.5mm,
+  bottom=1.5mm,
+  breakable,
+  before upper={\lossloppyupper}
+}
+
+% ============================================================================
+% KEY CONCEPT BOX
+% ============================================================================
+
+% \begin{keyconcept}[Title][LOS-ID]
+% Two optional arguments: #1 = title, #2 = LOS (for extraction, not rendered)
+\NewDocumentEnvironment{keyconcept}{O{Key Concept} O{}}{%
+  \begin{tcolorbox}[%
+    colback=losblue!5,
+    colframe=losblue!75!black,
+    fonttitle=\bfseries,
+    title={#1},
+    arc=2mm,
+    boxrule=0.5mm,
+    left=2.5mm,
+    right=2.5mm,
+    top=1.5mm,
+    bottom=1.5mm,
+    breakable,
+    before upper={\lossloppyupper}
+  ]
+}{%
+  \end{tcolorbox}%
+  % #2 (LOS) captured for extraction but not rendered
+}
+
+% ============================================================================
+% EXAMPLE BOX
+% ============================================================================
+
+\newtcolorbox{example}[1][Example]{%
+  colback=white,
+  colframe=black!50,
+  fonttitle=\bfseries\itshape,
+  title={#1},
+  arc=1mm,
+  boxrule=0.3mm,
+  left=2.5mm,
+  right=2.5mm,
+  top=1.5mm,
+  bottom=1.5mm,
+  breakable,
+  before upper={\lossloppyupper}
+}
+
+% ============================================================================
+% WARNING BOX (alias for redflag)
+% ============================================================================
+
+\newtcolorbox{warning}{%
+  colback=redflagred!5,
+  colframe=redflagred!75!black,
+  fonttitle=\bfseries,
+  title={Warning},
+  arc=2mm,
+  boxrule=0.5mm,
+  left=2.5mm,
+  right=2.5mm,
+  top=1.5mm,
+  bottom=1.5mm,
+  breakable,
+  before upper={\lossloppyupper}
+}
+
+% ============================================================================
+% COMMON MISTAKE BOX
+% ============================================================================
+
+\newtcolorbox{mistake}[1][Common Mistake]{%
+  colback=redflagred!5,
+  colframe=redflagred!75!black,
+  fonttitle=\bfseries,
+  title={\textbf{Mistake:} #1},
+  arc=2mm,
+  boxrule=0.5mm,
+  left=2.5mm,
+  right=2.5mm,
+  top=1.5mm,
+  bottom=1.5mm,
+  breakable,
+  before upper={\lossloppyupper}
+}
+
+% ============================================================================
+% FORMULA CARD (for key equations)
+% ============================================================================
+
+\colorlet{formulagreen}{WarmGreen}             % Formulas → practice green
+
+% \begin{formulacard}[Formula Name]
+% For displaying key formulas with explanations
+% Guard: interview-variants.sty may define this first via \newtcolorbox
+\makeatletter
+\@ifundefined{formulacard}{%
+  \NewDocumentEnvironment{formulacard}{O{Formula}}{%
+    \begin{tcolorbox}[%
+      colback=formulagreen!5,
+      colframe=formulagreen!75!black,
+      fonttitle=\bfseries,
+      title={\textsc{Formula:} #1},
+      arc=2mm,
+      boxrule=0.5mm,
+      left=2.5mm,
+      right=2.5mm,
+      top=1.5mm,
+      bottom=1.5mm,
+      breakable,
+      before upper={\lossloppyupper}
+    ]
+  }{%
+    \end{tcolorbox}%
+  }
+}{}
+\makeatother
+
+% ============================================================================
+% DECISION TREE (for method selection guides)
+% ============================================================================
+
+\colorlet{decisiongray}{WarmTeal!60!black}     % Decision framework → dark teal
+
+% \begin{decisiontree}[Title][LOS-ID]
+% Two optional arguments: #1 = title, #2 = LOS (for extraction, not rendered)
+% Guard: interview-variants.sty may define this first via \newtcolorbox
+\makeatletter
+\@ifundefined{decisiontree}{%
+  \NewDocumentEnvironment{decisiontree}{O{Decision Framework} O{}}{%
+    \begin{tcolorbox}[%
+      colback=decisiongray!5,
+      colframe=decisiongray!75!black,
+      fonttitle=\bfseries,
+      title={\textsc{Decision:} #1},
+      arc=2mm,
+      boxrule=0.5mm,
+      left=2.5mm,
+      right=2.5mm,
+      top=1.5mm,
+      bottom=1.5mm,
+      breakable,
+      before upper={\lossloppyupper}
+    ]
+  }{%
+    \end{tcolorbox}%
+    % #2 (LOS) captured for extraction but not rendered
+  }
+}{}
+\makeatother
+
+% Helper commands for decision trees
+\providecommand{\decision}[1]{\textbf{#1}\par}
+\providecommand{\outcome}[1]{\textit{#1}}
+
+% ============================================================================
+% CHAPTER QUOTE
+% ============================================================================
+
+\newcommand{\chapterquoteauthor}{}
+\newenvironment{chapterquote}[1]{%
+  \renewcommand{\chapterquoteauthor}{#1}%
+  \begin{quote}
+  \itshape
+}{%
+  \par\normalfont\hfill--- \chapterquoteauthor
+  \end{quote}
+  \vspace{1em}
+}
+
+% ============================================================================
+% COGNITIVE LEVEL MARKERS (for internal tracking)
+% ============================================================================
+
+% Markers for cognitive level distribution analysis
+\newcommand{\cognitivelevel}[1]{% define|explain|calculate|compare|analyze|evaluate|design
+  \pkgmarginnote{\tiny\textcolor{gray}{[#1]}}%
+}
+
+% ============================================================================
+% COMPANY TAGS (for filtering)
+% ============================================================================
+
+% \companytags{DS-Google-L4, DS-Netflix, MLE-Meta}
+\newcommand{\companytags}[1]{%
+  % No visual output, but parseable for card extraction
+  % Format: comma-separated role-company tags
+  \ignorespaces
+}
+
+% ============================================================================
+% ACTUARIAL BRIDGE BOX (for SOA-to-DS mappings)
+% ============================================================================
+
+% Color for actuarial content
+\colorlet{actuarialblue}{WarmGold!80!black}    % Actuarial bridges → dark gold
+
+% \begin{actuarialbridge}[Title]
+% Box for mapping actuarial concepts to DS/ML concepts
+% Extractable for card generation
+\NewDocumentEnvironment{actuarialbridge}{O{SOA Connection}}{%
+  \begin{tcolorbox}[%
+    colback=actuarialblue!5,
+    colframe=actuarialblue!75!black,
+    fonttitle=\bfseries,
+    title={\texttt{SOA}~#1},
+    arc=2mm,
+    boxrule=0.5mm,
+    left=3mm,
+    right=3mm,
+    top=2mm,
+    bottom=2mm,
+    breakable
+  ]
+}{%
+  \end{tcolorbox}%
+}
+
+% Inline actuarial margin note (non-extractable, for quick references)
+\newcommand{\actuarialnote}[1]{%
+  \pkgmarginnote{\tiny\textcolor{actuarialblue}{[SOA: #1]}}%
+}
+
+% Actuarial term definition (extractable, links to SOA exam)
+% \actuarialterm{DS term}{Actuarial equivalent}{SOA Exam}
+\newcommand{\actuarialterm}[3]{%
+  \textbf{#1}\index{#1} $\equiv$ \textit{#2} \textcolor{actuarialblue}{\scriptsize[#3]}%
+}
+
+% Actuarial environment — alias for actuarialbridge (used in Vol 1, Vol 2, vol_meta)
+\NewDocumentEnvironment{actuarial}{O{Actuarial Insight}}{%
+  \begin{actuarialbridge}[#1]
+}{%
+  \end{actuarialbridge}%
+}
+
+% ============================================================================
+% LEVEL COMPARISON CARDS (IC4 vs IC5)
+% ============================================================================
+
+% Color for level comparison
+\colorlet{levelblue}{WarmTeal}                 % Level cards → comparison teal
+
+% \begin{levelcard}{Title}[LOS-ID]
+% Box for comparing IC4 vs IC5 expectations
+% Note: Automatically creates 3-column tabular for \levelrow usage
+\NewDocumentEnvironment{levelcard}{m O{}}{%
+  \begin{tcolorbox}[%
+    colback=levelblue!5,
+    colframe=levelblue!75!black,
+    fonttitle=\bfseries,
+    title={#1},
+    arc=2mm,
+    boxrule=0.5mm,
+    left=3mm,
+    right=3mm,
+    top=2mm,
+    bottom=2mm,
+    breakable
+  ]
+  \small
+  % Column widths reduced for Tufte 4.5" text width: 3.2cm + 4.0cm = 7.2cm + ~2cm label = ~9.2cm
+  \begin{tabular}{@{}p{2cm}p{3.2cm}p{4.0cm}@{}}
+  \textbf{Dimension} & \textbf{IC4} & \textbf{IC5} \\
+  \hline
+}{%
+  \end{tabular}
+  \end{tcolorbox}%
+}
+
+% \levelrow{Dimension}{IC4 expectation}{IC5 expectation}
+% For use inside levelcard (tabular is auto-created)
+\newcommand{\levelrow}[3]{%
+  \textbf{#1} & #2 & #3 \\
+}
+
+% ============================================================================
+% COMPARISON CARDS (Generic, flexible column headers)
+% ============================================================================
+
+% Color for comparison cards
+\colorlet{compareblue}{WarmTeal}               % Comparison cards → comparison teal
+
+% \begin{comparisoncard}{Title}{ColA}{ColB}[LOS-ID]
+% Flexible 2-column comparison (e.g., Bagging vs Boosting)
+\NewDocumentEnvironment{comparisoncard}{m m m O{}}{%
+  \begin{tcolorbox}[%
+    colback=compareblue!5,
+    colframe=compareblue!75!black,
+    fonttitle=\bfseries,
+    title={#1},
+    arc=2mm,
+    boxrule=0.5mm,
+    left=3mm,
+    right=3mm,
+    top=2mm,
+    bottom=2mm,
+    breakable
+  ]
+  \small
+  \begin{tabular}{@{}p{2cm}p{3.5cm}p{3.5cm}@{}}
+  \textbf{Dimension} & \textbf{#2} & \textbf{#3} \\
+  \hline
+}{%
+  \end{tabular}
+  \end{tcolorbox}%
+}
+
+% \comprow{Dimension}{ValueA}{ValueB}
+% For use inside comparisoncard
+\newcommand{\comprow}[3]{%
+  \textbf{#1} & #2 & #3 \\
+}
+
+% \begin{comparisoncard3}{Title}{ColA}{ColB}{ColC}[LOS-ID]
+% Flexible 3-column comparison (e.g., SP vs SB vs SD)
+\NewDocumentEnvironment{comparisoncard3}{m m m m O{}}{%
+  \begin{tcolorbox}[%
+    colback=compareblue!5,
+    colframe=compareblue!75!black,
+    fonttitle=\bfseries,
+    title={#1},
+    arc=2mm,
+    boxrule=0.5mm,
+    left=3mm,
+    right=3mm,
+    top=2mm,
+    bottom=2mm,
+    breakable
+  ]
+  \small
+  \begin{tabular}{@{}p{1.8cm}p{2.3cm}p{2.3cm}p{2.3cm}@{}}
+  \textbf{Dimension} & \textbf{#2} & \textbf{#3} & \textbf{#4} \\
+  \hline
+}{%
+  \end{tabular}
+  \end{tcolorbox}%
+}
+
+% \comprow3{Dimension}{ValueA}{ValueB}{ValueC}
+% For use inside comparisoncard3
+\newcommand{\comprowiii}[4]{%
+  \textbf{#1} & #2 & #3 & #4 \\
+}
+
+% \begin{infocard}{Title}{Col1Header}{Col2Header}[LOS-ID]
+% Generic 2-column info card (not a comparison, e.g., Topic | Probability)
+\NewDocumentEnvironment{infocard}{m m m O{}}{%
+  \begin{tcolorbox}[%
+    colback=compareblue!5,
+    colframe=compareblue!75!black,
+    fonttitle=\bfseries,
+    title={#1},
+    arc=2mm,
+    boxrule=0.5mm,
+    left=3mm,
+    right=3mm,
+    top=2mm,
+    bottom=2mm,
+    breakable
+  ]
+  \small
+  \begin{tabular}{@{}p{4cm}p{5cm}@{}}
+  \textbf{#2} & \textbf{#3} \\
+  \hline
+}{%
+  \end{tabular}
+  \end{tcolorbox}%
+}
+
+% \inforow{Col1}{Col2}
+% For use inside infocard (2-column, no dimension label)
+\newcommand{\inforow}[2]{%
+  #1 & #2 \\
+}
+
+% ============================================================================
+% STAR STORY FRAMEWORK
+% ============================================================================
+
+% Color for STAR stories
+\colorlet{stargreen}{WarmGreen}                % STAR stories → practice green
+
+% \begin{starstory}[Story Title]
+% Box for STAR framework behavioral stories
+\NewDocumentEnvironment{starstory}{O{STAR Story}}{%
+  \begin{tcolorbox}[%
+    colback=stargreen!5,
+    colframe=stargreen!75!black,
+    fonttitle=\bfseries,
+    title={\texttt{STAR:}~#1},
+    arc=2mm,
+    boxrule=0.5mm,
+    left=3mm,
+    right=3mm,
+    top=2mm,
+    bottom=2mm,
+    breakable
+  ]
+}{%
+  \end{tcolorbox}%
+}
+
+% STAR component macros (for use inside starstory environment)
+\newcommand{\situation}[1]{\textbf{Situation:} #1\par\vspace{0.5em}}
+\newcommand{\task}[1]{\textbf{Task:} #1\par\vspace{0.5em}}
+\newcommand{\action}[1]{\textbf{Action:} #1\par\vspace{0.5em}}
+\newcommand{\result}[1]{\textbf{Result:} #1\par\vspace{0.5em}}
+\newcommand{\youredge}[1]{\textbf{Your Edge:} \textit{#1}}
+
+% ============================================================================
+% PARADOX / RESOLUTION PATTERN
+% ============================================================================
+
+% Color for paradox content
+\colorlet{paradoxorange}{WarmGold}             % Paradox → insight gold
+
+% \begin{paradox}[Paradox Title]
+% Box for presenting a counterintuitive observation or tension
+\NewDocumentEnvironment{paradox}{O{Paradox}}{%
+  \begin{tcolorbox}[%
+    colback=paradoxorange!5,
+    colframe=paradoxorange!75!black,
+    fonttitle=\bfseries,
+    title={\textbf{Paradox:}~#1},
+    arc=2mm,
+    boxrule=0.5mm,
+    left=3mm,
+    right=3mm,
+    top=2mm,
+    bottom=2mm,
+    breakable
+  ]
+}{%
+  \end{tcolorbox}%
+}
+
+% \begin{resolution}[Optional Title]
+% Box for resolving the paradox
+\NewDocumentEnvironment{resolution}{O{Resolution}}{%
+  \begin{tcolorbox}[%
+    colback=stargreen!5,
+    colframe=stargreen!75!black,
+    fonttitle=\bfseries,
+    title={\textbf{Resolution:}~#1},
+    arc=2mm,
+    boxrule=0.5mm,
+    left=3mm,
+    right=3mm,
+    top=2mm,
+    bottom=2mm,
+    breakable
+  ]
+}{%
+  \end{tcolorbox}%
+}
+
+% ============================================================================
+% BIDIRECTIONAL TERM DEFINITIONS
+% ============================================================================
+
+% \termbi[LOS]{name}{definition}
+% Creates a term definition that also generates a reverse lookup
+% (reverse lookup is handled by extraction pipeline, not LaTeX)
+\newcommand{\termbi}[3][]{%
+  \term[#1]{#2}{#3}%
+  % Note: Reverse mapping (definition → term) handled by card extraction
+}
+
+% ============================================================================
+% CLOZE TERM (for fill-in-the-blank Anki cards)
+% ============================================================================
+
+% Load expl3 for regex-based cloze stripping
+\RequirePackage{expl3}
+\ExplSyntaxOn
+
+% Store the result in a tl variable
+\tl_new:N \l_cloze_result_tl
+
+% \StripClozeExpl{text} - strips c1::, c2::, etc. using regex
+\cs_new:Npn \StripClozeExpl #1 {
+  \tl_set:Nn \l_cloze_result_tl {#1}
+  % Remove c1:: through c9:: patterns
+  \regex_replace_all:nnN { c[1-9]:: } {} \l_cloze_result_tl
+  \tl_use:N \l_cloze_result_tl
+}
+
+% User-facing command (works in normal LaTeX syntax)
+\cs_new:Npn \StripAllCloze #1 { \StripClozeExpl{#1} }
+\ExplSyntaxOff
+
+% \clozeterm[LOS]{term}{definition}
+% For PDF: renders as bold term followed by definition (cloze syntax stripped)
+% For Anki: extraction pipeline creates cloze deletion card
+%
+% Cloze syntax {{c1::text}} renders as just "text" in PDF
+% The extraction script reads the raw LaTeX and creates proper Anki cloze cards
+\newcommand{\clozeterm}[3][]{%
+  \textbf{#2}: \StripAllCloze{#3}%
+  % LOS #1 captured for extraction but not rendered
+}
+
+% Optional explanatory back for the most recent \clozeterm above. Renders as
+% a small indented italic "Why" note in the PDF and is captured by the Anki
+% extractor as the cloze card's back field — single-source-of-truth so the
+% explanation cannot drift between the printed guide and the spaced-repetition
+% deck. Place \clozeback immediately after the matching \clozeterm.
+\newcommand{\clozeback}[1]{%
+  \\[2pt]\hspace*{1em}\textit{\footnotesize #1}%
+}
+
+% ============================================================================
+% DATED CONTENT ENVIRONMENT (for rapidly-changing fields)
+% ============================================================================
+
+\NewDocumentEnvironment{datedcontent}{m}{%
+  \begin{tcolorbox}[colback=white, colframe=black!30, fonttitle=\bfseries\small,
+    title={Last updated: #1}, arc=1mm, boxrule=0.3mm, left=2mm, right=2mm,
+    top=1mm, bottom=1mm, breakable]
+}{%
+  \end{tcolorbox}%
+}
+
+% ============================================================================
+% WALKTHROUGH ENVIRONMENT (Step-by-step guided exercises)
+% ============================================================================
+
+\makeatletter
+\@ifundefined{walkthrough}{%
+  \colorlet{walkthroughgreen}{WarmGreen}
+  \NewDocumentEnvironment{walkthrough}{O{Walkthrough}}{%
+    \begin{tcolorbox}[colback=walkthroughgreen!5, colframe=walkthroughgreen!75!black,
+      fonttitle=\bfseries, title={#1}, arc=2mm, boxrule=0.5mm,
+      left=3mm, right=3mm, top=2mm, bottom=2mm, breakable]
+  }{%
+    \end{tcolorbox}%
+  }
+}{}
+\makeatother
+
+% ============================================================================
+% GENERATION-BEFORE-READING PROMPT
+% ============================================================================
+% Research: Slamecka & Graf (1978) generation effect; DeWinstanley & Bjork (2004).
+% Generating an answer (even incorrectly) produces stronger memory traces than
+% reading the answer. Place before sections that answer the question.
+%
+% Usage: \begin{generatefirst}[Optional title]
+%          What would you expect to find in a policy gradient loss function?
+%        \end{generatefirst}
+
+\colorlet{generategold}{WarmGold}
+\NewDocumentEnvironment{generatefirst}{O{Predict Before Reading}}{%
+  \begin{tcolorbox}[colback=generategold!8, colframe=generategold!75!black,
+    fonttitle=\bfseries, title={\textsc{#1}},
+    arc=2mm, boxrule=0.5mm,
+    left=3mm, right=3mm, top=2mm, bottom=2mm, breakable]
+}{%
+  \end{tcolorbox}%
+}
+
+% Companion metadata macro — invisible in PDF, read by the card extractor
+% (shared/cards/extract_cards.py) to fill the Anki back of the generatefirst
+% card. Place inside a \begin{generatefirst}...\end{generatefirst} block to
+% supply a model answer. Preserves the Slamecka & Graf generation-effect
+% pedagogy in the PDF (no answer shown) while giving spaced-repetition
+% reviewers gradeable feedback.
+\providecommand{\generateanswer}[1]{}
+
+% ============================================================================
+% CASE STUDY BOX
+% ============================================================================
+
+\NewDocumentEnvironment{casestudy}{m}{%
+  \begin{tcolorbox}[colback=vignetteyellow, colframe=black!50,
+    fonttitle=\bfseries, title={Case Study: #1}, arc=1mm, boxrule=0.3mm, breakable]
+}{%
+  \end{tcolorbox}%
+}
+
+% ============================================================================
+% QUICK CASE BOX
+% ============================================================================
+
+\NewDocumentEnvironment{quickcase}{m}{%
+  \begin{tcolorbox}[colback=vignetteyellow!50, colframe=black!30,
+    fonttitle=\bfseries\small, title={Quick Case: #1}, arc=1mm,
+    boxrule=0.3mm, left=2mm, right=2mm, top=1mm, bottom=1mm, breakable]
+}{%
+  \end{tcolorbox}%
+}
+
+% ============================================================================
+% SYSTEM DESIGN BOX
+% ============================================================================
+
+\colorlet{systemblue}{WarmTeal}                % System design → comparison teal
+\NewDocumentEnvironment{systemdesign}{m}{%
+  \begin{tcolorbox}[colback=systemblue!5, colframe=systemblue!75!black,
+    fonttitle=\bfseries, title={System Design: #1}, arc=2mm,
+    boxrule=0.5mm, left=3mm, right=3mm, top=2mm, bottom=2mm, breakable]
+}{%
+  \end{tcolorbox}%
+}
+
+% ============================================================================
+% PROBLEM BOX (Alternative problem format)
+% ============================================================================
+
+\newcounter{problemboxcounter}[chapter]
+\renewcommand{\theproblemboxcounter}{\thechapter.\arabic{problemboxcounter}}
+\NewDocumentEnvironment{problembox}{m}{%
+  \refstepcounter{problemboxcounter}%
+  \begin{tcolorbox}[colback=problemgray, colframe=black!50, fonttitle=\bfseries,
+    title={Problem \theproblemboxcounter: #1}, arc=1mm, boxrule=0.3mm, breakable]
+}{%
+  \end{tcolorbox}%
+}
+
+% ============================================================================
+% 60-SECOND EXPLANATION (guarded — may be defined by interview-variants.sty)
+% ============================================================================
+
+\makeatletter
+\@ifundefined{sixtysec}{%
+  \colorlet{sixtysecblue}{WarmBlue}
+  \NewDocumentEnvironment{sixtysec}{O{60-Second Explanation} O{}}{%
+    \begin{tcolorbox}[%
+      colback=sixtysecblue!5, colframe=sixtysecblue!75!black,
+      fonttitle=\bfseries, title={60s: #1},
+      arc=2mm, boxrule=0.5mm, left=3mm, right=3mm, top=2mm, bottom=2mm, breakable]
+  }{%
+    \end{tcolorbox}%
+  }
+}{}
+\makeatother
+
+\endinput

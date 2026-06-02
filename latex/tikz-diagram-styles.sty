@@ -1,0 +1,181 @@
+% tikz-diagram-styles.sty
+% Shared TikZ node and edge styles for interview prep diagrams.
+%
+% Loaded by interview-preamble-tufte.sty after TikZ and libraries.
+% Uses the canonical warm 6-hue palette (WarmBlue, WarmRose, etc.).
+%
+% Usage in chapters:
+%   \begin{tikzpicture}[node distance=1.5cm]
+%     \node[stage] (a) {Preprocess};
+%     \node[stage, right=of a] (b) {Index};
+%     \draw[arrow] (a) -- (b);
+%   \end{tikzpicture}
+
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{tikz-diagram-styles}[2026/03/10 Shared TikZ diagram styles v1.0]
+
+% ---------------------------------------------------------------------------
+% Node styles
+% ---------------------------------------------------------------------------
+
+\tikzset{
+  % Pipeline / process node (blue)
+  stage/.style={
+    rectangle,
+    draw=WarmBlue!70,
+    fill=WarmBlue!8,
+    rounded corners=3pt,
+    minimum width=2cm,
+    minimum height=0.8cm,
+    font=\small,
+    align=center,
+    text=DarkText,
+  },
+  % Error / failure node (rose)
+  fail/.style={
+    rectangle,
+    draw=WarmRose!70,
+    fill=WarmRose!8,
+    rounded corners=3pt,
+    minimum width=2cm,
+    minimum height=0.8cm,
+    font=\small,
+    align=center,
+    text=DarkText,
+  },
+  % Success / positive outcome (green)
+  ok/.style={
+    rectangle,
+    draw=WarmGreen!70,
+    fill=WarmGreen!8,
+    rounded corners=3pt,
+    minimum width=2cm,
+    minimum height=0.8cm,
+    font=\small,
+    align=center,
+    text=DarkText,
+  },
+  % Data / storage node (gold)
+  store/.style={
+    rectangle,
+    draw=WarmGold!70,
+    fill=WarmGold!8,
+    rounded corners=3pt,
+    minimum width=2cm,
+    minimum height=0.8cm,
+    font=\small,
+    align=center,
+    text=DarkText,
+  },
+  % Diamond decision point (blue)
+  decision/.style={
+    diamond,
+    draw=WarmBlue!70,
+    fill=WarmBlue!8,
+    minimum width=1.6cm,
+    minimum height=1.2cm,
+    font=\small,
+    align=center,
+    text=DarkText,
+    aspect=1.5,
+  },
+  % Outcome / result rectangle (green)
+  result/.style={
+    rectangle,
+    draw=WarmGreen!70,
+    fill=WarmGreen!8,
+    rounded corners=3pt,
+    minimum width=2cm,
+    minimum height=0.8cm,
+    font=\small,
+    align=center,
+    text=DarkText,
+  },
+  % Annotation / label (no border, italic)
+  annot/.style={
+    font=\small\itshape,
+    text=WarmBlue!80!black,
+    align=center,
+  },
+  % Highlight / emphasis node (plum)
+  highlight/.style={
+    rectangle,
+    draw=WarmPlum!70,
+    fill=WarmPlum!8,
+    rounded corners=3pt,
+    minimum width=2cm,
+    minimum height=0.8cm,
+    font=\small,
+    align=center,
+    text=DarkText,
+  },
+  % Comparison node (teal) — for side-by-side diagrams
+  compare/.style={
+    rectangle,
+    draw=WarmTeal!70,
+    fill=WarmTeal!8,
+    rounded corners=3pt,
+    minimum width=2cm,
+    minimum height=0.8cm,
+    font=\small,
+    align=center,
+    text=DarkText,
+  },
+}
+
+% ---------------------------------------------------------------------------
+% Edge styles
+% ---------------------------------------------------------------------------
+
+\tikzset{
+  % Standard directed edge
+  arrow/.style={
+    -Stealth,
+    thick,
+    color=gray!60,
+  },
+  % Dashed / optional edge
+  dasharrow/.style={
+    -Stealth,
+    thick,
+    dashed,
+    color=gray!60,
+  },
+  % Bidirectional edge
+  biarrow/.style={
+    Stealth-Stealth,
+    thick,
+    color=gray!60,
+  },
+  % Label on edge
+  edgelabel/.style={
+    font=\scriptsize,
+    midway,
+    fill=white,
+    inner sep=1pt,
+  },
+}
+
+% ---------------------------------------------------------------------------
+% Layout presets (use as tikzpicture options)
+% ---------------------------------------------------------------------------
+
+\tikzset{
+  % Horizontal pipeline layout
+  pipeline/.style={
+    node distance=2cm and 1.5cm,
+    every node/.style={font=\small},
+  },
+  % Vertical flow layout
+  flowchart/.style={
+    node distance=1.2cm,
+    every node/.style={font=\small},
+  },
+  % Architecture / system design layout
+  architecture/.style={
+    node distance=1.5cm and 2cm,
+    every node/.style={font=\small},
+  },
+}
+
+\endinput

@@ -1,0 +1,207 @@
+# Canonical values for course-learning standards.
+#
+# This file is a documented reference, NOT a machine-enforced source of truth.
+# Scripts continue to hardcode their own copies of these values; a
+# drift-detection audit (`scripts/audit_canonical_drift.py`) is a deferred
+# follow-up.
+#
+# Authoritative narrative for each enum lives in docs/standards/00_universal/.
+# When updating this file, update the corresponding doc and vice versa.
+#
+# Version: 1.0
+# Last updated: 2026-04-19
+
+bloom_levels:
+  # Canonical 10-level taxonomy. See docs/standards/00_universal/learning_outcomes.md.
+  # Used in \los{ID}{level}{statement} and validated by guide_qa.yaml.los.valid_levels.
+  - key: define
+    bloom: Remember
+    description: Recall a definition or term
+  - key: explain
+    bloom: Understand
+    description: Articulate a concept in your own words
+  - key: calculate
+    bloom: Apply
+    description: Compute a result from given inputs
+  - key: compare
+    bloom: Analyze
+    description: Identify similarities and differences
+  - key: analyze
+    bloom: Analyze
+    description: Decompose to identify components and relationships
+  - key: evaluate
+    bloom: Evaluate
+    description: Make a judgment with reasoned criteria
+  - key: design
+    bloom: Create
+    description: Construct a plan or system
+  - key: apply
+    bloom: Apply
+    description: Use a method in a new situation
+  - key: debug
+    bloom: Apply / Analyze (hybrid)
+    description: Locate and fix a defect
+  - key: trace
+    bloom: Apply / Understand (hybrid)
+    description: Walk through execution / derivation step by step
+
+margin_categories:
+  # Six convenience macros wrapping \marginnote[<Category>]{...}.
+  # See docs/standards/00_universal/content_design.md for craft rules.
+  - key: interview
+    macro: \interviewmargin
+    category: Interview
+    purpose: Company signal and what interviewers test
+  - key: pattern
+    macro: \patternmargin
+    category: Pattern
+    purpose: Recitable procedure or mnemonic
+  - key: formula
+    macro: \formulamargin
+    category: Formula
+    purpose: Instantiated formula (not general form)
+  - key: warning
+    macro: \warningmargin
+    category: Warning
+    purpose: Common mistake plus direction
+    expansion: \marginnote[Warning]{text}    # corrects an old typo that said \marginwarning
+  - key: practice
+    macro: \practicemargin
+    category: Practice
+    purpose: Time target plus key technique
+  - key: crossref
+    macro: \crossrefmargin
+    category: Cross-Ref
+    purpose: Pointer to another guide stating what it provides
+
+card_types:
+  # Card types extracted by shared/cards/extract_cards.py.
+  # See docs/standards/00_universal/card_standards.md for templates and policies.
+  common:
+    - term
+    - keyconcept
+    - checkpoint
+    - problem
+    - vignette
+    - drill
+    - interview          # also matched as 'interviewcontext'
+  specialized:
+    - redflag
+    - formula
+    - decisiontree
+    - levelcard
+    - comparison
+    - comparison3
+    - sixtysec
+    - interviewtip
+    - starstory
+    - paradox
+    - actuarialbridge
+    - cloze              # Anki-native cloze deletion
+    - clozeterm
+    - termbi
+    - mathdef
+    - proposition
+    - theorem
+    - pitfall
+    - generatefirst
+
+audit_scripts:
+  # All 10 scripts in shared/audits/. See docs/standards/00_universal/audit_catalog.md.
+  - script: audit_content_quality.py
+    group: content_and_retrieval
+  - script: audit_retrieval_coverage.py
+    group: content_and_retrieval
+  - script: audit_margin_quality.py
+    group: content_and_retrieval
+  - script: audit_solution_quality.py
+    group: content_and_retrieval
+  - script: audit_card_quality.py
+    group: cards
+  - script: audit_card_presentation.py
+    group: cards
+  - script: audit_atomicity.py
+    group: cards
+  - script: audit_term_consistency.py
+    group: cards
+  - script: audit_crossref_quality.py
+    group: references
+  - script: audit_content_freshness.py
+    group: references
+
+validation_scripts:
+  # shared/validation/* — wired into Makefile QA targets.
+  - script: check_refs.py
+    makefile_target: qa-refs
+  - script: check_latex_warnings.py
+    makefile_target: qa-presentation
+  - script: extract_los.py
+    makefile_target: qa-los
+  - script: check_duplicates.py
+    makefile_target: qa-cards
+
+makefile_qa_targets:
+  # Per-guide notes/notebook/Makefile targets. Standard across all guides.
+  - target: pilot
+    purpose: Single-pass lualatex build
+  - target: digital
+    purpose: Full multi-pass latexmk
+  - target: print
+    purpose: Print-mode latexmk variant
+  - target: cards
+    purpose: Run extract_cards.py
+  - target: decks
+    purpose: Run yaml_to_apkg.py
+  - target: clean
+    purpose: Remove aux/log/index/minted temp files
+  - target: qa
+    purpose: Chained QA validation
+  - target: qa-build
+    purpose: Pilot build (LaTeX validity)
+  - target: qa-refs
+    purpose: check_refs.py
+  - target: qa-los
+    purpose: extract_los.py --validate
+  - target: qa-cards
+    purpose: Card extraction with --validate
+  - target: qa-presentation
+    purpose: check_latex_warnings.py
+  - target: qa-health
+    purpose: guide_health.py traffic-light dashboard
+  - target: qa-ready
+    purpose: guide_readiness.py blocking-failure check
+
+families:
+  # Workspace family taxonomy. See docs/standards/{10..99}_*/overlay.md.
+  - key: manning
+    prefix: manning_
+    catalog: scripts/manning_catalog.yaml
+    overlay: docs/standards/10_manning/overlay.md
+  - key: dlai
+    prefix: dlai_
+    catalog: scripts/dlai_full_catalog.yaml
+    overlay: docs/standards/20_dlai/overlay.md
+  - key: deeplearning_ai
+    prefix: deeplearning_ai_
+    catalog: scripts/dlai_full_catalog.yaml    # shares DLAI catalog
+    overlay: docs/standards/20_dlai/overlay.md  # inherits DLAI overlay
+  - key: coursera
+    prefix: coursera_
+    catalog: null                               # no catalog yet (proposed)
+    overlay: docs/standards/30_coursera/overlay.md
+  - key: other
+    prefix: null                                # any non-standard prefix
+    catalog: null
+    overlay: docs/standards/99_other/overlay.md
+
+tier_model:
+  # See docs/standards/00_universal/tier_model.md for full criteria.
+  - tier: bronze
+    description: Passes scripts/audit_all_courses.py at 9/9 GREEN
+    fleet_count_2026_04_19: 115
+  - tier: silver
+    description: Bronze + scaffolded source manifest + real Appendix D + real interview_connections.md + non-stub dashboard
+    fleet_count_2026_04_19: 0    # No guide has source manifest yet
+  - tier: gold
+    description: Silver + 100% LOS retrieval + 10-audit clean + per-chapter Anki decks + ≥2 valid \crossrefmargin{} + source-fidelity spot check
+    fleet_count_2026_04_19: 0

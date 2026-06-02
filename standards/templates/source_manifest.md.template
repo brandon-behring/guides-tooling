@@ -1,0 +1,102 @@
+---
+guide_slug: <slug>
+family: <manning | dlai | deeplearning_ai | coursera | other>
+canonical_source_path: <e.g., "chapters/" or "code/book/chapters/" or "scripts/course_structures/<slug>/raw/transcripts/">
+extraction_pipeline: <pdf | livebook_playwright | docling | vtt_dlai | vtt_coursera | manual>
+extraction_dates:
+  initial: <YYYY-MM-DD>
+  latest_verification: <YYYY-MM-DD>
+extraction_tool_versions:
+  playwright: <version-or-null>
+  docling: <version-or-null>
+---
+
+# Source Provenance Manifest
+
+## Source Metadata
+
+- **Title**: <book or course title>
+- **Authors / Instructors**: <names>
+- **Publisher / Platform**: <Manning | DeepLearning.AI | Coursera | other>
+- **URL**: <publisher liveBook URL / DLAI course URL / Coursera specialization URL>
+- **Publication status**: <published | meap | not_started>
+- **Publication / release date**: <YYYY-MM>
+- **Page count (source)**: <integer>
+- **Workspace path**: <e.g., manning_rlhf_book>
+
+## Source Material Inventory
+
+| Artifact | Local path | Acquisition method | Notes |
+|----------|-----------|--------------------|-------|
+| PDF | <path or "n/a"> | <e.g., "Manning purchase 2026-04-15"> | <e.g., "MEAP v3, equations OK"> |
+| liveBook | <URL or "n/a"> | <e.g., "Playwright extraction"> | <e.g., "Chapters 1-9 available"> |
+| Companion repo | <local path or "n/a"> | <e.g., "git clone <URL>"> | <e.g., "mirror of natolambert/rlhf-book"> |
+| Supplement | <path or "n/a"> | — | <e.g., "Test-yourself companion book"> |
+| Other | — | — | — |
+
+## TOC and Coverage
+
+- **Source chapter count**: <integer>
+- **Extracted chapter count**: <integer>
+- **Source appendix count**: <integer>
+- **Extracted appendix count**: <integer>
+- **Coverage gap**: <e.g., "MEAP has not yet released Ch 18-20; will revisit when published">
+
+## Known Source Issues
+
+- <e.g., "Chapter 5 figure 5.3 cannot be reproduced; concept is represented in prose under §5.3.">
+- <e.g., "Equation labels in liveBook extraction are unstable; using paragraph anchors instead.">
+
+## MEAP Status (Manning only — omit for non-MEAP guides)
+
+- **MEAP version**: <e.g., "v3 (2026-03)">
+- **Available chapters**: <integer>
+- **Expected to change**: <yes | no | unknown>
+- **Missing future chapters**: <list or "none expected">
+- **Latest source verification**: <YYYY-MM-DD>
+
+## Specialization Metadata (Coursera multi-course only)
+
+- **Specialization slug**: <slug>
+- **Course count**: <integer>
+- **Total weeks**: <integer>
+- **Total assignments**: <integer>
+- **Primary instructors**: <names>
+
+## Companion Code Status
+
+- **Has code**: <true | false>
+- **If true**:
+  - **Local path**: <e.g., code/>
+  - **Upstream**: <e.g., https://github.com/natolambert/rlhf-book>
+  - **Acquisition method**: <git clone | unzip | manual copy>
+  - **Last sync**: <YYYY-MM-DD>
+- **If false**:
+  - **Rationale**: <e.g., "Course is about using a tool; no implementation code">
+  - **Alternative artifacts**: <e.g., "Instructor-provided demo notebooks at <URL>">
+
+## Family-Specific Fields
+
+[See per-family overlay for additional required fields:
+- Manning: `docs/standards/10_manning/overlay.md`
+- DLAI: `docs/standards/20_dlai/overlay.md`
+- Coursera: `docs/standards/30_coursera/overlay.md`
+- Other: `docs/standards/99_other/overlay.md`]
+
+## Family-Not-Listed Exception (99_other only)
+
+- **Closest family analogue**: <Manning | DLAI | Coursera>
+- **Why this guide diverges**: <e.g., "Math-reference manuscript with no platform-extracted source">
+- **Promotion criterion**: <e.g., "Promote out of 99_other when ≥3 similar guides exist">
+
+## Remediation Notes
+
+[List any source items that could not be acquired, any open questions about
+the source, or any decisions deferred to future sprints.]
+
+---
+
+> This file follows the schema at
+> `docs/standards/templates/source_manifest.md.template`. When the schema
+> changes, regenerate or update this file. See
+> `docs/standards/00_universal/document_lifecycle.md` for the lifecycle policy.

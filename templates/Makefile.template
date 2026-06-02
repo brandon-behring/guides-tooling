@@ -1,0 +1,64 @@
+MAIN = {{MAIN}}
+LATEX = lualatex
+LATEXFLAGS = -shell-escape -interaction=nonstopmode -file-line-error
+LATEXMK = latexmk
+LATEXMK_FLAGS = -lualatex -shell-escape -interaction=nonstopmode -file-line-error
+
+.PHONY: all digital print pilot clean cards decks qa qa-build qa-refs qa-los qa-cards qa-presentation qa-health qa-ready
+
+all: digital
+
+# Quick single-pass build (fastest, for iterating)
+pilot:
+	$(LATEX) $(LATEXFLAGS) $(MAIN).tex
+
+# Full multi-pass build (resolves refs, index, TOC)
+pdf: $(MAIN).tex chapters/*.tex appendices/*.tex
+	$(LATEX) $(LATEXFLAGS) $(MAIN).tex
+	$(LATEX) $(LATEXFLAGS) $(MAIN).tex
+	$(LATEX) $(LATEXFLAGS) $(MAIN).tex
+
+# Digital variant (via latexmk -pretex injection)
+digital:
+	$(LATEXMK) $(LATEXMK_FLAGS) -jobname=$(MAIN)_digital \
+		-pretex="\newif\ifprintmode\printmodefalse" -usepretex $(MAIN).tex
+
+# Print variant
+print:
+	$(LATEXMK) $(LATEXMK_FLAGS) -jobname=$(MAIN)_print \
+		-pretex="\newif\ifprintmode\printmodetrue" -usepretex $(MAIN).tex
+
+clean:
+	rm -f *.aux *.log *.out *.toc *.idx *.ilg *.ind *.bbl *.blg *.bcf *.run.xml
+	rm -f *.fls *.fdb_latexmk *.synctex.gz *.glo *.gls *.glg *.acn *.acr *.alg *.ist
+	rm -f chapters/*.aux appendices/*.aux
+	rm -rf _minted-*
+
+# ── Card & Deck Targets ────────────────────────────────────────────────────
+cards:
+	python3 ../../shared/cards/extract_cards.py \
+		chapters/*.tex -o cards/
+
+decks:
+	python3 ../../shared/anki/yaml_to_apkg.py \
+		cards/all_cards.yml \
+		--deck-prefix "{{GUIDE_NAME}}" \
+		-o decks/
+
+# ── QA Targets ──────────────────────────────────────────────────────────────
+qa: qa-build qa-refs qa-los qa-cards qa-presentation
+qa-build:
+	$(LATEX) $(LATEXFLAGS) $(MAIN).tex
+qa-refs:
+	python3 ../scripts/validation/check_refs.py chapters/*.tex appendices/*.tex
+qa-los:
+	python3 ../scripts/validation/extract_los.py chapters/*.tex --validate
+qa-cards:
+	python3 ../../shared/cards/extract_cards.py \
+		chapters/*.tex -o cards/ --validate 2>/dev/null || true
+qa-presentation:
+	python3 ../scripts/validation/check_latex_warnings.py $(MAIN).log
+qa-health:
+	python3 ../../shared/qa/guide_health.py --config ../guide_qa.yaml
+qa-ready:
+	python3 ../../shared/qa/guide_readiness.py --config ../guide_qa.yaml

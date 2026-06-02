@@ -1,0 +1,26 @@
+% Appendix A: Quick Reference
+% Course: {{GUIDE_NAME}}
+
+\chapter{Quick Reference}
+\label{app:quick-ref}
+
+% ════════════════════════════════════════════════════════════════════════════
+\section{Key Commands / API Calls}
+\label{sec:ref-commands}
+% ════════════════════════════════════════════════════════════════════════════
+
+% To be filled during chapter authoring
+
+% ════════════════════════════════════════════════════════════════════════════
+\section{Configuration Reference}
+\label{sec:ref-config}
+% ════════════════════════════════════════════════════════════════════════════
+
+% To be filled during chapter authoring
+
+% ════════════════════════════════════════════════════════════════════════════
+\section{Decision Cheat Sheet}
+\label{sec:ref-decisions}
+% ════════════════════════════════════════════════════════════════════════════
+
+% To be filled during chapter authoring

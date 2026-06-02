@@ -1,0 +1,62 @@
+% Chapter: {{COURSE_ID}}{{MODULE_ID}} — {{MODULE_TITLE}}
+% Course: {{GUIDE_NAME}}
+
+\moduleheader{{{COURSE_ID}}{{MODULE_ID}}}{{{MODULE_TITLE}}}{{{MODULE_SUMMARY}}}
+
+% ── Learning Outcomes ───────────────────────────────────────────────────────
+\begin{learningoutcomes}
+    \los{{{LOS_PREFIX}}-{{CHAPTER_NUM}}.1}{explain}{First learning outcome here.}
+\end{learningoutcomes}
+
+% ── Narrative Bridge ────────────────────────────────────────────────────────
+\begin{tcolorbox}[narrativebox, title=Where We Are]
+    Brief context: what the previous module covered and how this module builds on it.
+\end{tcolorbox}
+
+% ════════════════════════════════════════════════════════════════════════════
+\section{First Section Title}
+% ════════════════════════════════════════════════════════════════════════════
+
+Content here.
+
+% ── Generation Prompt (predict before reading) ────────────────────────────
+% Research: Slamecka & Graf (1978) — generation effect
+% \begin{generatefirst}[Section Topic]
+%     What would you expect to find / how would you approach [topic]?
+% \end{generatefirst}
+
+% ── Worked-Faded-Practice Progression (Sweller 2011, Renkl 2002) ─────────
+% Step 1: Worked example — all steps visible
+% \begin{problem}[Worked: Topic][{{LOS_PREFIX}}-N.M][foundation][full]
+%     Fully solved problem with \substep{}{} labels.
+% \end{problem}
+% \begin{solution}
+%     \substep{Identify the approach}{...}
+%     \substep{Apply the technique}{...}
+%     \substep{Verify the result}{...}
+% \end{solution}
+%
+% Step 2: Faded example — some steps blanked
+% \begin{problem}[Scaffolded: Topic][{{LOS_PREFIX}}-N.M][standard][partial]
+%     Same structure, but Step 2 left for student to fill.
+% \end{problem}
+% \begin{solution}
+%     \substep{Identify the approach}{Given}
+%     \substep{Apply the technique}{[Your answer here]}
+%     \substep{Verify the result}{Given}
+% \end{solution}
+%
+% Step 3: Independent practice — no scaffolding
+% \begin{problem}[Practice: Topic][{{LOS_PREFIX}}-N.M][standard]
+%     New problem, no hints.
+% \end{problem}
+% \begin{solution}
+%     Full solution with Key Insight.
+% \end{solution}
+
+% ── Checkpoint Questions ────────────────────────────────────────────────────
+\begin{tcolorbox}[checkpointbox, title=Module Checkpoint]
+    \begin{enumerate}
+        \item First checkpoint question?
+    \end{enumerate}
+\end{tcolorbox}

@@ -1,0 +1,16 @@
+% Appendix E: Post-Course Updates
+% Course: {{GUIDE_NAME}}
+
+\chapter{Post-Course Updates}
+\label{app:updates}
+
+\begin{tcolorbox}[colback=SunsetOrange!5, colframe=SunsetOrange, title=\textbf{Recency Notice}]
+This guide was authored in {{DATE}}. Check official documentation for the latest updates.
+\end{tcolorbox}
+
+% ════════════════════════════════════════════════════════════════════════════
+\section{Changes Since Course Release}
+\label{sec:changes}
+% ════════════════════════════════════════════════════════════════════════════
+
+% Track API changes, new features, deprecations here

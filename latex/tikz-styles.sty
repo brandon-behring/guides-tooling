@@ -1,0 +1,106 @@
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{tikz-styles}[2026/04/19 Fleet-wide TikZ vocabulary for course_learning diagrams]
+
+% =============================================================================
+% TIKZ STYLES --- shared diagram vocabulary for all course_learning guides.
+% =============================================================================
+% Purpose: reusable node styles, semantic colors, and library loads so every
+% guide draws transformer/LLM/RL/causal diagrams with a consistent look.
+%
+% Reuses palette aliases defined in shared/latex/interview-preamble-tufte.sty
+% (PrimaryBlue, ForestGreen, CrimsonRed, SunsetOrange, SteelBlue). Guides
+% that do not load that preamble must provide those colors themselves.
+%
+% Usage (in guide main .tex, after the shared preamble):
+%     \usepackage{shared/tikz-styles}
+% Then draw diagrams inline with llmblock, llminputblock, llmoutputblock,
+% llmarrow, llmskiparrow, or maskmatrix styles.
+% =============================================================================
+
+\RequirePackage{tikz}
+\usetikzlibrary{
+    arrows.meta,
+    positioning,
+    fit,
+    shapes.geometric,
+    calc,
+    decorations.pathreplacing,
+    matrix,
+    backgrounds
+}
+
+% -----------------------------------------------------------------------------
+% Semantic colors for LLM/transformer concepts. Mapped onto the existing warm
+% palette for visual coherence with tcolorbox styles. Ink-friendly (works in
+% grayscale print).
+% -----------------------------------------------------------------------------
+\providecolor{embedcolor}{HTML}{3B6FA0}   % token + positional embeddings = WarmBlue
+\providecolor{attncolor}{HTML}{8A4E82}    % attention (Q/K/V, softmax)    = WarmPlum
+\providecolor{ffncolor}{HTML}{4A8C8C}     % feed-forward / MLP             = WarmTeal
+\providecolor{rescolor}{HTML}{4A7E3F}     % residual connections           = WarmGreen
+\providecolor{normcolor}{HTML}{C09840}    % LayerNorm / RMSNorm            = WarmGold
+\providecolor{maskcolor}{HTML}{C06858}    % causal mask / masked positions = WarmRose
+\providecolor{datacolor}{HTML}{B5B3AA}    % data / tokens / raw input      = CodeFrame
+
+% -----------------------------------------------------------------------------
+% Node styles --- llmblock is the workhorse. All use rounded corners and a
+% warm background tint for contrast without overpowering.
+% -----------------------------------------------------------------------------
+\tikzset{
+    llmblock/.style={
+        draw, rounded corners=2pt, thick,
+        minimum width=2.2cm, minimum height=0.8cm,
+        align=center, font=\small,
+        inner sep=3pt
+    },
+    llminputblock/.style={
+        llmblock,
+        fill=datacolor!15, draw=datacolor!80!black
+    },
+    llmoutputblock/.style={
+        llmblock,
+        fill=embedcolor!10, draw=embedcolor,
+        font=\small\bfseries
+    },
+    llmattnblock/.style={
+        llmblock,
+        fill=attncolor!10, draw=attncolor
+    },
+    llmffnblock/.style={
+        llmblock,
+        fill=ffncolor!10, draw=ffncolor
+    },
+    llmnormblock/.style={
+        llmblock,
+        fill=normcolor!10, draw=normcolor!80!black,
+        minimum height=0.55cm, font=\footnotesize
+    },
+    llmmaskblock/.style={
+        llmblock,
+        fill=maskcolor!15, draw=maskcolor
+    },
+    % Arrows: forward flow vs residual skip
+    llmarrow/.style={
+        -{Stealth[length=2.5mm]}, thick
+    },
+    llmskiparrow/.style={
+        -{Stealth[length=2.5mm]}, thick, rescolor,
+        rounded corners=2pt
+    },
+    % Matrix style for causal-mask / attention heatmaps.
+    % Use: \matrix (m) [maskmatrix] { ... };
+    maskmatrix/.style={
+        matrix of nodes,
+        nodes={
+            draw, minimum size=0.7cm, anchor=center,
+            font=\footnotesize, inner sep=0pt
+        },
+        column sep=-\pgflinewidth,
+        row sep=-\pgflinewidth
+    },
+    % Cell shades used inside a maskmatrix.
+    maskcell/.style={fill=maskcolor!55, text=white, font=\footnotesize\bfseries},
+    attncell/.style={fill=attncolor!25, text=black}
+}
+
+\endinput

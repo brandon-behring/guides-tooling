@@ -1,0 +1,21 @@
+% Appendix B: Gotchas and Debugging
+% Course: {{GUIDE_NAME}}
+
+\chapter{Gotchas and Debugging}
+\label{app:gotchas}
+
+% ════════════════════════════════════════════════════════════════════════════
+\section{Common Errors}
+\label{sec:gotchas-errors}
+% ════════════════════════════════════════════════════════════════════════════
+
+% To be filled during chapter authoring
+% Use \begin{redflag}[Title] ... \end{redflag} for each gotcha
+
+% ════════════════════════════════════════════════════════════════════════════
+\section{Debugging Workflows}
+\label{sec:gotchas-debug}
+% ════════════════════════════════════════════════════════════════════════════
+
+% To be filled during chapter authoring
+% Use debugbox tcolorbox for step-by-step debug procedures

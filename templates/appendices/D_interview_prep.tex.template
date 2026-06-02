@@ -1,0 +1,208 @@
+% Appendix D: Interview Preparation
+% Course: {{GUIDE_NAME}}
+% LOS prefix: {{LOS_PREFIX}}
+%
+% Silver-tier scaffold. Replace every << FILL: ... >> marker with concrete
+% content; keep section structure so a filled copy exceeds the 100-non-blank-
+% line Silver gate (scripts/audit_silver_fleet.py::check_appendix_d).
+%
+% Exemplars to copy tone from:
+%   manning_rlhf_book/notes/notebook/appendices/D_interview_prep.tex
+%   manning_llm_from_scratch/notes/notebook/appendices/D_interview_prep.tex
+
+\chapter{Interview Preparation}
+\label{app:interview-prep}
+
+% =============================================================================
+\section{Conceptual Questions (Screen / Phone)}
+\label{sec:interview-core}
+% =============================================================================
+
+\begin{enumerate}
+    \item \textbf{<< FILL: foundational definition question >>}
+
+    \textit{Key points}: << FILL: 2--3 sentence answer keyed to a chapter
+    concept. Name the primitive, state the purpose, give one concrete
+    instance. >>
+
+    \textit{Ref}: Ch.~\cref{ch:M1}
+
+    \item \textbf{<< FILL: compare/contrast question (this technique vs.\ alternative) >>}
+
+    \textit{Key points}: << FILL: axis of comparison, trade-off,
+    when to pick each. >>
+
+    \textit{Ref}: Ch.~\cref{ch:M2}
+
+    \item \textbf{<< FILL: mechanics question (how does X actually work?) >>}
+
+    \textit{Key points}: << FILL: step-by-step at the level an interviewer
+    expects an IC4 to produce on a whiteboard. Include the loss/objective
+    or the data flow. >>
+
+    \textit{Ref}: Ch.~\cref{ch:M3}
+
+    \item \textbf{<< FILL: failure-mode question (what goes wrong and why?) >>}
+
+    \textit{Key points}: << FILL: named failure mode, root cause, diagnostic
+    signal, mitigation. >>
+
+    \textit{Ref}: Ch.~\cref{ch:M4}
+
+    \item \textbf{<< FILL: evaluation question (how do you measure success?) >>}
+
+    \textit{Key points}: << FILL: metric name, what it captures, blind spots,
+    and the sibling metric you would pair with it. >>
+
+    \textit{Ref}: Ch.~\cref{ch:M5}
+\end{enumerate}
+
+% =============================================================================
+\section{Technical Deep Dives (Onsite)}
+\label{sec:interview-deep}
+% =============================================================================
+
+\begin{enumerate}
+    \item \textbf{<< FILL: derivation / whiteboard question >>}
+
+    \textit{Key points}: << FILL: 4--6 lines. Include the objective,
+    the key identity or simplification, and the final closed-form or
+    update rule. Use inline math (\$\dots\$) not display math unless
+    the expression is load-bearing. >>
+
+    \textit{Ref}: Ch.~\cref{ch:M6}
+
+    \item \textbf{<< FILL: implementation question (what would you actually write?) >>}
+
+    \textit{Key points}: << FILL: data structures, loop shape, edge
+    cases the interviewer looks for (empty input, ties, numerical
+    stability). Reference a specific card or code listing. >>
+
+    \textit{Ref}: Ch.~\cref{ch:M7}
+
+    \item \textbf{<< FILL: scaling / cost question (what breaks at production scale?) >>}
+
+    \textit{Key points}: << FILL: the bottleneck (memory / compute /
+    latency / quality), the quantitative framing (e.g.\ $O(n^2)$ attention,
+    KV cache size), and one mitigation (quantization, batching, caching,
+    distillation). >>
+
+    \textit{Ref}: Ch.~\cref{ch:M8}
+
+    \item \textbf{<< FILL: debugging scenario (you see symptom X, what is the
+    diagnosis?) >>}
+
+    \textit{Key points}: << FILL: ordered hypothesis list (cheapest check
+    first), what each check rules out, and the fix for the most likely
+    root cause. >>
+
+    \textit{Ref}: Ch.~\cref{ch:M9}
+\end{enumerate}
+
+% =============================================================================
+\section{System Design Question}
+\label{sec:interview-design}
+% =============================================================================
+
+\textbf{``<< FILL: one-line design prompt that this guide's content prepares
+you to answer. E.g.\ `Design a retrieval system for a legal-research product.'
+>>''}
+
+\begin{enumerate}
+    \item \textbf{Problem framing}:
+    << FILL: clarifying questions you would ask the interviewer. Name the
+    users, the quality bar, the traffic shape, and the hard constraints. >>
+
+    \item \textbf{Component selection}:
+    << FILL: the 3--5 building blocks you would reach for and why each
+    one. Tie back to a chapter that justifies the choice. >>
+
+    \item \textbf{Data + training plan}:
+    << FILL: what data you need, how you label/annotate, how you split,
+    and what eval harness you run. >>
+
+    \item \textbf{Serving + scaling}:
+    << FILL: latency budget per component, caching layers, fallback
+    behaviour under load or model outage. >>
+
+    \item \textbf{Quality + safety}:
+    << FILL: the top failure modes for this system, how you monitor them,
+    and the guardrails you put in front of the model. >>
+
+    \item \textbf{Evaluation + rollout}:
+    << FILL: offline eval (benchmark + fixture set), online eval (A/B,
+    holdout, live signal), and the metric that would cause you to roll
+    back. >>
+
+    \item \textbf{Iteration loop}:
+    << FILL: how production signal flows back into the next training /
+    retrieval / prompt refresh. State cadence. >>
+\end{enumerate}
+
+% =============================================================================
+\section{Common Misconceptions Interviewers Test}
+\label{sec:interview-misconceptions}
+% =============================================================================
+
+\begin{tabular}{p{4.5cm}p{5.5cm}}
+\toprule
+\textbf{Misconception} & \textbf{Reality} \\
+\midrule
+<< FILL: plausible-sounding wrong belief 1 >> & << FILL: the correction, with a chapter pointer >> \\
+<< FILL: wrong belief 2 >> & << FILL: correction + chapter >> \\
+<< FILL: wrong belief 3 >> & << FILL: correction + chapter >> \\
+<< FILL: wrong belief 4 >> & << FILL: correction + chapter >> \\
+<< FILL: wrong belief 5 >> & << FILL: correction + chapter >> \\
+\bottomrule
+\end{tabular}
+
+% =============================================================================
+\section{IC-Level Role Expectations}
+\label{sec:interview-levels}
+% =============================================================================
+
+\begin{center}
+\small
+\begin{tabular}{@{}p{2.2cm}p{10.5cm}@{}}
+    \toprule
+    \textbf{Level} & \textbf{Expected depth on {{GUIDE_NAME}} signals} \\
+    \midrule
+    IC3 / IC4 & << FILL: the vocabulary level. States the primitives,
+    names the loss/objective, reads a snippet of reference code, recognizes
+    a standard failure mode by its symptom. >> \\
+    \addlinespace
+    IC5 / Senior & << FILL: the judgment level. Derives the update rule,
+    picks between two closely-related methods based on a stated
+    trade-off, designs a small eval harness, diagnoses a regression from
+    a metric-trace. >> \\
+    \addlinespace
+    IC6 / Staff+ & << FILL: the strategy level. Challenges the premise
+    (``do we even need this technique here?''), owns the quality surface,
+    connects the technical choice to a cost / safety / org argument,
+    frames a multi-quarter roadmap for the capability. >> \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+% =============================================================================
+\section{Cross-Reference Map}
+\label{sec:interview-crossref}
+% =============================================================================
+
+% Replace the rows below with one row per chapter in this guide. LOS ids
+% should be real (run `scripts/validation/extract_los.py` to confirm).
+
+\begin{center}
+\small
+\begin{tabular}{@{}llp{5cm}@{}}
+    \toprule
+    \textbf{Topic} & \textbf{Chapter} & \textbf{Key LOS} \\
+    \midrule
+    << FILL: chapter 1 topic >>  & \cref{ch:M1}  & {{LOS_PREFIX}}-1.1--1.N \\
+    << FILL: chapter 2 topic >>  & \cref{ch:M2}  & {{LOS_PREFIX}}-2.1--2.N \\
+    << FILL: chapter 3 topic >>  & \cref{ch:M3}  & {{LOS_PREFIX}}-3.1--3.N \\
+    << FILL: chapter 4 topic >>  & \cref{ch:M4}  & {{LOS_PREFIX}}-4.1--4.N \\
+    << FILL: chapter 5 topic >>  & \cref{ch:M5}  & {{LOS_PREFIX}}-5.1--5.N \\
+    \bottomrule
+\end{tabular}
+\end{center}
