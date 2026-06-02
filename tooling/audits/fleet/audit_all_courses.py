@@ -84,42 +84,48 @@ def check_guide_qa(course: Path) -> tuple[str, str]:
 
 
 def check_validation_symlinks(course: Path) -> tuple[str, str]:
-    """Check 2: scripts/validation/ has 4 valid symlinks."""
-    val_dir = course / "scripts" / "validation"
-    if not val_dir.exists():
-        return "RED", "directory missing"
+    """Check 2: the tooling submodule provides the validation modules.
+
+    New-contract replacement for per-guide ``scripts/validation/`` symlinks:
+    QA now runs as ``python -m tooling.validation.*`` via the included tooling
+    Makefile, so guides no longer carry symlinks into a ``shared/`` tree. We
+    instead verify the modules ship in the mounted ``tooling/`` package.
+    (Falls back to per-guide symlinks so an un-migrated monorepo guide still
+    scores.)
+    """
     expected = ["check_refs.py", "check_duplicates.py", "extract_los.py", "check_latex_warnings.py"]
-    found = 0
-    dead = 0
-    for name in expected:
-        link = val_dir / name
-        if link.is_symlink():
-            if link.resolve().exists():
-                found += 1
-            else:
-                dead += 1
-        elif link.exists():
-            found += 1  # regular file, still counts
+    pkg_validation = Path(paths.__file__).resolve().parent / "validation"
+    missing = [n for n in expected if not (pkg_validation / n).exists()]
+    if not missing:
+        return "GREEN", "tooling provides validation (python -m tooling.validation.*)"
+    # Legacy fallback: per-guide symlinks (pre-carve monorepo layout).
+    val_dir = course / "scripts" / "validation"
+    found = sum(1 for n in expected if (val_dir / n).is_symlink() or (val_dir / n).exists())
     if found == 4:
-        return "GREEN", f"4/4 valid"
-    if found > 0:
-        return "YELLOW", f"{found}/4 valid, {dead} dead"
-    return "RED", f"0/4 symlinks"
+        return "GREEN", "4/4 legacy symlinks"
+    return "RED", f"tooling missing: {', '.join(missing)}"
 
 
 def check_makefile_qa(course: Path) -> tuple[str, str]:
-    """Check 3: Makefile has qa-health target."""
+    """Check 3: the guide Makefile wires in the tooling QA/card targets.
+
+    New contract: the guide ``include``s the tooling Makefile, which supplies
+    qa-refs/qa-los/qa-presentation/qa-health/qa-ready/cards/decks. Accept the
+    include OR inline targets (so an un-migrated monorepo guide still scores).
+    """
     makefile = layout.makefile(course)
     if not makefile.exists():
         return "RED", "Makefile missing"
     content = makefile.read_text()
+    if "include $(TOOLING)" in content:
+        return "GREEN", "includes tooling Makefile"
     targets = ["qa-health", "qa-refs", "qa-los", "qa-cards", "qa-presentation"]
     found = [t for t in targets if f"{t}:" in content]
     if len(found) == len(targets):
-        return "GREEN", f"{len(found)}/{len(targets)} targets"
+        return "GREEN", f"{len(found)}/{len(targets)} inline targets"
     if len(found) > 0:
-        return "YELLOW", f"{len(found)}/{len(targets)} targets"
-    return "RED", "no qa targets"
+        return "YELLOW", f"{len(found)}/{len(targets)} inline targets"
+    return "RED", "no qa targets or tooling include"
 
 
 def check_extensions_sty(course: Path) -> tuple[str, str]:
@@ -261,7 +267,7 @@ def audit_course(course: Path) -> dict:
     """
     checks = [
         ("guide_qa.yaml", check_guide_qa),
-        ("Validation symlinks", check_validation_symlinks),
+        ("Validation tooling", check_validation_symlinks),
         ("Makefile QA targets", check_makefile_qa),
         ("notebook-extensions.sty", check_extensions_sty),
         ("Cards extracted", check_cards),
