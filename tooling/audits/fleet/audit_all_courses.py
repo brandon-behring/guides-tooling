@@ -389,6 +389,11 @@ def main() -> None:
             "'silver' shows only guides failing the Silver gate; 'all' shows everything."
         ),
     )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="exit non-zero if any guide is below Bronze 9/9 (CI gate; ignores Silver)",
+    )
     args = parser.parse_args()
 
     courses = discover_courses()
@@ -430,6 +435,15 @@ def main() -> None:
                 print(line)
     else:
         print(report)
+
+    if args.strict:
+        failing = [a["course"] for a in audits if a["green"] < 9]
+        if failing:
+            print(
+                f"\nSTRICT: {len(failing)} guide(s) below Bronze 9/9: {', '.join(sorted(failing))}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
 
 if __name__ == "__main__":
