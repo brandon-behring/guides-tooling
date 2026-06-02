@@ -38,8 +38,10 @@ decks:
 	$(PY) -m tooling.anki.yaml_to_apkg cards/all_cards.yml -o decks/ --config ../guide_qa.yaml
 
 # ── Fleet (run from the <host> repo root) ────────────────────────────────────
-.PHONY: audit-all audit-manifests
+.PHONY: audit-all audit-manifests dashboards
 audit-all:
 	$(PY) -m tooling.audits.fleet.audit_all_courses
 audit-manifests:
 	$(PY) -m tooling.audits.fleet.audit_source_manifest --all
+dashboards:
+	$(PY) -m tooling.generate.dashboards
