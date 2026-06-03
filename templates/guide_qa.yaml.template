@@ -42,7 +42,7 @@ metrics:
     target: 0
     yellow: 5
     inverted: true
-    check_cmd: "python3 scripts/validation/check_latex_warnings.py {{GUIDE_DIR}}/{{MAIN}}.log --json 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get('overfull_count',0))\""
+    check_cmd: "PYTHONPATH=../../tooling python3 -m tooling.validation.check_latex_warnings {{GUIDE_DIR}}/{{MAIN}}.log --json 2>/dev/null | python3 -c \"import sys,json; print(json.load(sys.stdin).get('overfull_50pt',0))\""
 
 readiness_checks:
   - name: "LaTeX Build"
@@ -51,13 +51,13 @@ readiness_checks:
     success: "{{GUIDE_DIR}}/{{MAIN}}.pdf"
   - name: "Cross References"
     blocking: true
-    cmd: "python3 scripts/validation/check_refs.py {{GUIDE_DIR}}/chapters/*.tex {{GUIDE_DIR}}/appendices/*.tex"
+    cmd: "PYTHONPATH=../../tooling python3 -m tooling.validation.check_refs {{GUIDE_DIR}}/chapters/*.tex {{GUIDE_DIR}}/appendices/*.tex"
   - name: "LOS Validation"
     blocking: false
-    cmd: "python3 scripts/validation/extract_los.py {{GUIDE_DIR}}/chapters/*.tex --validate"
+    cmd: "PYTHONPATH=../../tooling python3 -m tooling.validation.extract_los {{GUIDE_DIR}}/chapters/*.tex --validate"
   - name: "LaTeX Presentation"
     blocking: true
-    cmd: "python3 scripts/validation/check_latex_warnings.py {{GUIDE_DIR}}/{{MAIN}}.log"
+    cmd: "PYTHONPATH=../../tooling python3 -m tooling.validation.check_latex_warnings {{GUIDE_DIR}}/{{MAIN}}.log --threshold-red 5"
     threshold: 5
 
 # Gold tier exceptions (uncomment + populate as applicable).

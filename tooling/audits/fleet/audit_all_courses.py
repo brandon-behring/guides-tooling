@@ -191,14 +191,34 @@ def check_bloom_levels(course: Path) -> tuple[str, str]:
 
 
 def check_hardcoded_paths(course: Path) -> tuple[str, str]:
-    """Check 9: No ~/Claude/ paths in Makefile."""
+    """Check 9: No non-portable paths in the Makefile OR guide_qa.yaml check commands.
+
+    Extended beyond the Makefile to also scan ``guide_qa.yaml`` (the import-era
+    drift lived in its ``check_cmd``/``cmd`` strings, not the Makefile):
+      * ``~/Claude/...`` absolute paths (sibling-repo dependency)
+      * ``mdls`` page_count WITHOUT a ``pdfinfo`` primary (Spotlight-only, breaks
+        on fresh PDFs); the canonical ``pdfinfo``→``mdls`` fallback is allowed
+      * local ``scripts/validation/*.py`` (missing symlink; use
+        ``python -m tooling.validation.*``)
+    """
+    problems: list[str] = []
     makefile = layout.makefile(course)
-    if not makefile.exists():
-        return "GREEN", "no Makefile to check"
-    content = makefile.read_text()
-    if "~/Claude/" in content or os.path.expanduser("~") + "/Claude/" in content:
-        matches = re.findall(r"~/Claude/\S+", content)
-        return "RED", f"found: {', '.join(matches[:3])}"
+    if makefile.exists():
+        content = makefile.read_text()
+        if "~/Claude/" in content or os.path.expanduser("~") + "/Claude/" in content:
+            m = re.findall(r"~/Claude/\S+", content)
+            problems.append(f"Makefile {m[0] if m else '~/Claude'}")
+    qa = course / "guide_qa.yaml"
+    if qa.exists():
+        qa_text = qa.read_text()
+        if "~/Claude/" in qa_text:
+            problems.append("guide_qa.yaml ~/Claude path")
+        if "mdls" in qa_text and "pdfinfo" not in qa_text:
+            problems.append("guide_qa.yaml mdls page_count (no pdfinfo)")
+        if re.search(r"scripts/validation/\w+\.py", qa_text):
+            problems.append("guide_qa.yaml scripts/validation path")
+    if problems:
+        return "RED", "; ".join(problems[:3])
     return "GREEN", "clean"
 
 
