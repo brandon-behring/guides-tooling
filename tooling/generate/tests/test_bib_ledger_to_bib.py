@@ -79,6 +79,14 @@ def test_convert_refuses_handauthored_without_force(tmp_path):
     assert SENTINEL in bib.read_text()
 
 
+def test_convert_overwrites_stub_without_force(tmp_path):
+    gd = _make_guide(tmp_path)
+    bib = gd / "guide" / "references.bib"
+    bib.write_text("% Bibliography for X\n% Add entries as you work through each module.\n")  # stub, 0 @ entries
+    convert(gd)  # no --force needed for a stub
+    assert SENTINEL in bib.read_text() and bib.read_text().count("@") == 4
+
+
 def test_convert_rejects_debate_ledger(tmp_path):
     gd = _make_guide(tmp_path)
     (gd / "review" / "research" / "bib_ledger.yml").write_text(

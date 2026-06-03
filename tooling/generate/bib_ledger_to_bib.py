@@ -137,10 +137,14 @@ def convert(guide_dir: Path, force: bool = False) -> str:
             f"hand-curated 'sources:' debate ledgers are not convertible)"
         )
     if bib.exists():
-        head = bib.read_text(encoding="utf-8")[:300]
-        if SENTINEL not in head and not force:
+        existing = bib.read_text(encoding="utf-8")
+        has_real_entries = bool(re.search(r"(?m)^@\w+\{", existing))
+        # Freely overwrite a stub (no @ entries) or a previously-GENERATED file;
+        # only a hand-authored bib WITH real entries needs --force.
+        if has_real_entries and SENTINEL not in existing[:300] and not force:
             raise ValueError(
-                f"{bib} is hand-authored (no GENERATED sentinel); rerun with --force to overwrite"
+                f"{bib} is hand-authored (has @ entries, no GENERATED sentinel); "
+                f"rerun with --force to overwrite"
             )
     bib.parent.mkdir(parents=True, exist_ok=True)
     bib.write_text(render_bib(entries) + "\n", encoding="utf-8")
