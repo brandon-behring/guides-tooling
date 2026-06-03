@@ -1184,12 +1184,15 @@ def load_cards_from_yaml(filepath: Path) -> list[dict[str, Any]]:
         return []
 
 
-from tooling import paths  # noqa: E402
+from tooling import discovery, layout, paths  # noqa: E402
 
 
 def find_all_card_yamls() -> list[Path]:
-    """Discover all all_cards.yml files across course guides (guide/ layout)."""
-    return sorted(paths.host_root().glob("*/guide/cards/all_cards.yml"))
+    """Discover all all_cards.yml files across guides (recursive; topic-nested OK)."""
+    return sorted(
+        y for y in (layout.cards_yaml(g) for g in discovery.iter_guide_dirs())
+        if y.exists()
+    )
 
 
 def generate_single_deck(

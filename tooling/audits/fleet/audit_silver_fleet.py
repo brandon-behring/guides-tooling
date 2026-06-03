@@ -35,7 +35,7 @@ import re
 import sys
 from pathlib import Path
 
-from tooling import layout, paths
+from tooling import discovery, layout, paths
 from tooling.audits.fleet.audit_source_manifest import audit_guide as audit_manifest
 MANIFEST_THRESHOLD = 30.0
 
@@ -147,7 +147,7 @@ def audit_silver(guide_dir: Path) -> dict:
 
 
 def discover_guides() -> list[Path]:
-    return sorted(p.parent for p in paths.host_root().glob("*/guide_qa.yaml"))
+    return discovery.iter_guide_dirs()
 
 
 def format_row(name: str, results: dict, width: int) -> str:

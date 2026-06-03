@@ -71,7 +71,7 @@ from pathlib import Path
 
 import yaml
 
-from tooling import layout, paths
+from tooling import discovery, layout, paths
 from tooling.audits.fleet.audit_silver_fleet import (
     check_dashboard as check_dashboard_heuristic,
     check_manifest as check_manifest_heuristic,
@@ -280,7 +280,7 @@ SYSTEM_DESIGN_ALLOWLIST = load_system_design_allowlist()
 
 
 def discover_guides() -> list[Path]:
-    return sorted(p.parent for p in paths.host_root().glob("*/guide_qa.yaml"))
+    return discovery.iter_guide_dirs()
 
 
 def silver_sweep_touched_guides() -> set[str]:

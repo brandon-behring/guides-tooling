@@ -20,7 +20,7 @@ from pathlib import Path
 
 import yaml
 
-from tooling import paths
+from tooling import discovery, layout, paths
 
 
 # ---------------------------------------------------------------------------
@@ -129,10 +129,11 @@ def combine(cards_dir: Path, dry_run: bool = False) -> int:
 
 
 def find_all_card_dirs() -> list[Path]:
-    """Discover all card directories across guides (guide/ layout)."""
+    """Discover all card directories across guides (recursive; topic-nested OK)."""
     dirs: list[Path] = []
-    for cards_dir in sorted(paths.host_root().glob("*/guide/cards")):
-        if find_card_files(cards_dir):
+    for guide in discovery.iter_guide_dirs():
+        cards_dir = layout.cards_dir(guide)
+        if cards_dir.is_dir() and find_card_files(cards_dir):
             dirs.append(cards_dir)
     return sorted(dirs)
 

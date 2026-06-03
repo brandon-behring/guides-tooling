@@ -30,7 +30,7 @@ from pathlib import Path
 
 import yaml
 
-from tooling import layout, paths
+from tooling import discovery, layout, paths
 
 TEMPLATE = paths.standards_dir() / "templates" / "source_manifest.md.template"
 
@@ -236,7 +236,7 @@ def audit_guide(guide_dir: Path, max_todo_pct: float) -> list[str]:
 
 def discover_guides() -> list[Path]:
     """Discover all guide workspaces by guide_qa.yaml presence."""
-    return sorted(p.parent for p in paths.host_root().glob("*/guide_qa.yaml"))
+    return discovery.iter_guide_dirs()
 
 
 def main() -> int:

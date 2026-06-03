@@ -32,7 +32,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from tooling import layout, paths
+from tooling import discovery, layout, paths
 
 REPORTS_DIR = paths.host_root() / "reports"
 EXCLUDE_DIRS = {
@@ -56,16 +56,12 @@ STANDARD_LEVELS = {
 
 
 def discover_courses() -> list[Path]:
-    """Find all course directories with guide_qa.yaml."""
-    courses = []
-    for item in sorted(paths.host_root().iterdir()):
-        if not item.is_dir():
-            continue
-        if item.name in EXCLUDE_DIRS or item.name.startswith("."):
-            continue
-        if (item / "guide_qa.yaml").exists():
-            courses.append(item)
-    return courses
+    """Find all guide directories (recursive; handles topic-nested layouts).
+
+    Delegates to the centralized recursive walk and drops known non-guide dirs
+    (curriculum / reading-list folders) by basename.
+    """
+    return [g for g in discovery.iter_guide_dirs() if g.name not in EXCLUDE_DIRS]
 
 
 def check_guide_qa(course: Path) -> tuple[str, str]:
