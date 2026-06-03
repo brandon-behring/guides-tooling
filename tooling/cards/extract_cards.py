@@ -3160,11 +3160,11 @@ def extract_checkpoints(content: str, source_file: str, volume: str, chapter: st
             if i - 1 < len(los_brackets):
                 bracket_content = los_brackets[i - 1]
                 if bracket_content:
-                    los_match = re.match(r'\[([A-Z]+-[\d.]+)\]', bracket_content)
+                    los_match = re.match(r'\[([A-Z0-9]+-[\d.]+)\]', bracket_content)
                     if los_match:
                         los_id = los_match.group(1)
             if not los_id:
-                hfill_match = re.search(r'\\hfill\\textit\{[^}]*?([A-Z]+-[\d.]+)', item_text)
+                hfill_match = re.search(r'\\hfill\\textit\{[^}]*?([A-Z0-9]+-[\d.]+)', item_text)
                 if hfill_match:
                     los_id = hfill_match.group(1)
 
