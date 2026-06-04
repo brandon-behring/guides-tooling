@@ -3088,21 +3088,20 @@ def _parse_item_list(body: str) -> tuple[list[str], list[str | None]]:
         return [], []
     base = min(item_depths)
     tops = [(s, e) for (k, s, e, d) in recs if k == 'item' and d == base]
-    first_start = tops[0][0]
-    # The outer list closes at the first \end whose pre-decrement depth == base,
-    # after the first top-level item. Content past it (a trailing \medskip, the
-    # \rule before "Answers:") is not part of any item — mirrors the old lookahead
-    # that stopped at the first \end{enumerate|itemize}.
-    close = len(body)
-    for (k, s, _e, d) in recs:
-        if k == 'end' and d == base and s > first_start:
-            close = s
-            break
+    # \end tokens that close a base-level list (pre-decrement depth == base).
+    # Each item's content ends at the CLOSER of (the next top-level \item) and
+    # (the \end that closes ITS own list). This excludes trailing junk after a
+    # list (a \medskip / the \rule before "Answers:"), while still capturing
+    # SIBLING lists at the same depth — a list that closes, some prose, then a
+    # second \begin{...}\setcounter{enumi}{N}\item... — each in full, instead of
+    # truncating everything at the first list's close.
+    ends_at_base = [s for (k, s, _e, d) in recs if k == 'end' and d == base]
     items: list[str] = []
     los_brackets: list[str | None] = []
-    for idx, (_ts, tend) in enumerate(tops):
-        seg_end = tops[idx + 1][0] if idx + 1 < len(tops) else close
-        seg = body[tend:min(seg_end, close)]
+    for idx, (tstart, tend) in enumerate(tops):
+        next_item = tops[idx + 1][0] if idx + 1 < len(tops) else len(body)
+        list_close = next((es for es in ends_at_base if es > tstart), len(body))
+        seg = body[tend:min(next_item, list_close)]
         # Mirror the old `\item\s*(?:[..]\s*)?` consumption: optional LOS bracket.
         lead = re.match(r'\s*(\[[^\]]*\])?\s*', seg)
         bracket = lead.group(1) if (lead and lead.group(1)) else None

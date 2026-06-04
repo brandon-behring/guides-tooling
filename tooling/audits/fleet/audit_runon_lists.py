@@ -33,8 +33,17 @@ LET = re.compile(r"\([a-e]\)[~ ]")
 # one paragraph (with no \item) is the "inline section headers" anti-pattern.
 HDR = re.compile(r"\\textbf\{[^}]*:\s*\}")
 
+# Exercise/prompt environments where inline enumerations are legitimate (a
+# problem statement listing steps, a vignette's sub-questions) — exclude them
+# to keep the advisory count focused on real list-formatting debt.
+EXCLUDE_ENV = re.compile(
+    r"\\begin\{(problembox|problem|vignette|solution|redflag)\}.*?\\end\{\1\}",
+    re.DOTALL,
+)
+
 
 def scan_text(text: str) -> int:
+    text = EXCLUDE_ENV.sub(" ", text)
     flagged = 0
     for para in re.split(r"\n\s*\n", text):
         if "\\item" in para:
