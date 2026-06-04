@@ -34,6 +34,15 @@ LET = re.compile(r"\([a-e]\)[~ ]")
 # Inline section-header labels: \textbf{Case for:} \textbf{Critique:} — two in
 # one paragraph (with no \item) is the "inline section headers" anti-pattern.
 HDR = re.compile(r"\\textbf\{[^}]*:\s*\}")
+# ...but the styled boxes have their OWN field labels (a keyconcept's Core
+# Insight / Why It Matters / When It Breaks, a worked Answer/Approach, a gotcha's
+# Symptom/Cause/Fix). Those are the box's structure, not an inline run-on, so
+# they are subtracted from the HDR count before the threshold test.
+STRUCT_HDR = re.compile(
+    r"\\textbf\{\s*(?:Core Insight|Why It Matters|When It Breaks|Decision Rule"
+    r"|Symptom|Cause|Root causes?|Fix|Diagnosis|Diagnostic|Input|Output|Target"
+    r"|Answer|Approach|Key Insight)\s*:\s*\}"
+)
 
 # Structured / prompt environments where inline enumerations and label runs are
 # legitimate, not run-on-list debt: problem/vignette/solution/redflag prompts; a
@@ -45,10 +54,18 @@ EXCLUDE_ENV = re.compile(
     r"|interviewcontext)\}.*?\\end\{\1\}",
     re.DOTALL,
 )
+# The same structured cards are sometimes authored as a styled tcolorbox
+# (`\begin{tcolorbox}[debugbox, ...]` / `[conceptbox, ...]`) rather than a named
+# environment — exclude those spans too.
+EXCLUDE_TCB = re.compile(
+    r"\\begin\{tcolorbox\}\[[^]]*?(?:debugbox|conceptbox)[^]]*\]"
+    r".*?\\end\{tcolorbox\}",
+    re.DOTALL,
+)
 
 
 def scan_text(text: str) -> int:
-    text = EXCLUDE_ENV.sub(" ", text)
+    text = EXCLUDE_TCB.sub(" ", EXCLUDE_ENV.sub(" ", text))
     flagged = 0
     for para in re.split(r"\n\s*\n", text):
         if "\\item" in para:
@@ -58,7 +75,7 @@ def scan_text(text: str) -> int:
             # not a chapter run-on paragraph (its inline enumeration stays prose)
         if len(NUM.findall(para)) >= 3 or len(LET.findall(para)) >= 3:
             flagged += 1
-        elif len(HDR.findall(para)) >= 2:
+        elif len(HDR.findall(para)) - len(STRUCT_HDR.findall(para)) >= 2:
             flagged += 1
     return flagged
 
