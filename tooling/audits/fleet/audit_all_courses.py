@@ -39,7 +39,7 @@ EXCLUDE_DIRS = {
     "shared", "scripts", "_archived", ".git", ".claude", "docs", "reports",
     "templates",
     # Non-guide artifacts (curriculum / reading-list documents, not course guides):
-    "manning_curriculum", "manning_sutskevers_list",
+    "manning_curriculum",
 }
 
 # Silver audit helpers
