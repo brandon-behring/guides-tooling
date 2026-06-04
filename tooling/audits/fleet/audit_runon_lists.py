@@ -25,19 +25,24 @@ import sys
 
 from tooling import discovery, paths
 
-# Inline numbered/lettered enumerations: "(1)~" / "(2) " etc. Two-or-more in one
-# paragraph (with no \item) is a run-on list.
+# Inline numbered/lettered enumerations: "(1)~" / "(2) " etc. Three-or-more in
+# one paragraph (with no \item) is a run-on list. The conversion policy converts
+# 3+ inline items to a real list and deliberately leaves 2-item enumerations as
+# prose (a "(1) X (2) Y" sentence contrast), so the audit threshold matches: 3+.
 NUM = re.compile(r"\([1-9]\)[~ ]")
 LET = re.compile(r"\([a-e]\)[~ ]")
 # Inline section-header labels: \textbf{Case for:} \textbf{Critique:} — two in
 # one paragraph (with no \item) is the "inline section headers" anti-pattern.
 HDR = re.compile(r"\\textbf\{[^}]*:\s*\}")
 
-# Exercise/prompt environments where inline enumerations are legitimate (a
-# problem statement listing steps, a vignette's sub-questions) — exclude them
-# to keep the advisory count focused on real list-formatting debt.
+# Structured / prompt environments where inline enumerations and label runs are
+# legitimate, not run-on-list debt: problem/vignette/solution/redflag prompts; a
+# `debugbox` gotcha card (Symptom/Cause/Fix labels, each line-led); a `drill`
+# prompt; an `interviewcontext` spoken-answer script. Excluded so the advisory
+# count stays focused on real chapter-prose list-formatting debt.
 EXCLUDE_ENV = re.compile(
-    r"\\begin\{(problembox|problem|vignette|solution|redflag)\}.*?\\end\{\1\}",
+    r"\\begin\{(problembox|problem|vignette|solution|redflag|debugbox|drill"
+    r"|interviewcontext)\}.*?\\end\{\1\}",
     re.DOTALL,
 )
 
@@ -48,7 +53,10 @@ def scan_text(text: str) -> int:
     for para in re.split(r"\n\s*\n", text):
         if "\\item" in para:
             continue  # a real list (or list body) — well-formed, skip
-        if len(NUM.findall(para)) >= 2 or len(LET.findall(para)) >= 2:
+        if "\\term[" in para:
+            continue  # a glossary/term definition — a compact dictionary entry,
+            # not a chapter run-on paragraph (its inline enumeration stays prose)
+        if len(NUM.findall(para)) >= 3 or len(LET.findall(para)) >= 3:
             flagged += 1
         elif len(HDR.findall(para)) >= 2:
             flagged += 1
@@ -81,10 +89,13 @@ def main() -> int:
     lines = [
         f"# Run-on List Audit (advisory) — {today}",
         "",
-        "Flags inline run-on lists (`(1)…(2)…`, `(a)…(b)…`) and inline section-header",
-        "pairs (`\\textbf{X:} … \\textbf{Y:}`) that should be `itemize`/`enumerate`/",
-        "`description` per `tooling/standards/card_standards.md`. **Advisory only** — it",
-        "does not gate Bronze/Silver. Paragraphs already using `\\item` are skipped.",
+        "Flags inline run-on lists (3+ `(1)…(2)…(3)…`, `(a)…(b)…(c)…`) and inline",
+        "section-header pairs (`\\textbf{X:} … \\textbf{Y:}`) that should be `itemize`/",
+        "`enumerate`/`description` per `tooling/standards/card_standards.md`. **Advisory",
+        "only** — it does not gate Bronze/Silver. Skipped (legitimate, not debt):",
+        "paragraphs with `\\item` (real lists), `\\term[...]` glossary definitions, and",
+        "`problem`/`vignette`/`solution`/`redflag`/`debugbox`/`drill`/`interviewcontext`",
+        "environments (structured cards & prompts where inline enumeration is intended).",
         "",
         f"**Total flagged paragraphs: {grand} across {len(offenders)}/{len(rows)} guides.**",
         "",
