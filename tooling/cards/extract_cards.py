@@ -3063,23 +3063,53 @@ def _strip_trailing_checkpointanswer(item_text: str) -> tuple[str, str | None]:
 
 
 def _parse_item_list(body: str) -> tuple[list[str], list[str | None]]:
-    """Return ``(item_bodies, los_brackets)`` parsed from an enumerate/itemize body."""
-    items = re.findall(
-        r'\\item\s*(?:\[[^\]]*\]\s*)?(.*?)(?=\\item|\s*\\end\{enumerate\}|\s*\\end\{itemize\})',
-        body,
-        re.DOTALL,
-    )
-    if not items:
-        items = re.findall(r'\\item\s*(?:\[[^\]]*\]\s*)?(.+)', body)
-    raw = re.findall(
-        r'\\item\s*(\[[^\]]*\])?\s*(?:.*?)(?=\\item|\s*\\end\{enumerate\}|\s*\\end\{itemize\})',
-        body,
-        re.DOTALL,
-    )
-    los_brackets = [entry if entry else None for entry in raw]
-    # Align lengths defensively
-    while len(los_brackets) < len(items):
-        los_brackets.append(None)
+    r"""Return ``(item_bodies, los_brackets)`` parsed from an enumerate/itemize body.
+
+    Nesting-aware: only ``\item`` markers at the OUTER list depth begin a new item;
+    an ``\item`` inside a nested environment (e.g. a sub-list inside a checkpoint
+    answer) stays part of its enclosing item. Tracks ``\begin{...}``/``\end{...}``
+    depth to tell outer items from nested ones. For bodies with no nested
+    environments this is identical to the previous flat regex parse — the only
+    caller is ``extract_checkpoints``.
+    """
+    token_re = re.compile(r'\\begin\{[^}]*\}|\\end\{[^}]*\}|\\item(?![a-zA-Z])')
+    recs: list[tuple[str, int, int, int]] = []  # (kind, start, end, depth_before)
+    depth = 0
+    for m in token_re.finditer(body):
+        tok = m.group()
+        if tok.startswith('\\begin'):
+            recs.append(('begin', m.start(), m.end(), depth)); depth += 1
+        elif tok.startswith('\\end'):
+            recs.append(('end', m.start(), m.end(), depth)); depth -= 1
+        else:  # \item
+            recs.append(('item', m.start(), m.end(), depth))
+    item_depths = [d for (k, _s, _e, d) in recs if k == 'item']
+    if not item_depths:
+        return [], []
+    base = min(item_depths)
+    tops = [(s, e) for (k, s, e, d) in recs if k == 'item' and d == base]
+    first_start = tops[0][0]
+    # The outer list closes at the first \end whose pre-decrement depth == base,
+    # after the first top-level item. Content past it (a trailing \medskip, the
+    # \rule before "Answers:") is not part of any item — mirrors the old lookahead
+    # that stopped at the first \end{enumerate|itemize}.
+    close = len(body)
+    for (k, s, _e, d) in recs:
+        if k == 'end' and d == base and s > first_start:
+            close = s
+            break
+    items: list[str] = []
+    los_brackets: list[str | None] = []
+    for idx, (_ts, tend) in enumerate(tops):
+        seg_end = tops[idx + 1][0] if idx + 1 < len(tops) else close
+        seg = body[tend:min(seg_end, close)]
+        # Mirror the old `\item\s*(?:[..]\s*)?` consumption: optional LOS bracket.
+        lead = re.match(r'\s*(\[[^\]]*\])?\s*', seg)
+        bracket = lead.group(1) if (lead and lead.group(1)) else None
+        if lead:
+            seg = seg[lead.end():]
+        los_brackets.append(bracket)
+        items.append(seg.strip())
     return items, los_brackets
 
 
