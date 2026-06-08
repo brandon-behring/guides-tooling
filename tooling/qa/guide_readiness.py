@@ -17,6 +17,7 @@ Usage:
 """
 
 import argparse
+import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -28,6 +29,12 @@ try:
     from guide_qa_config import GuideConfig, ReadinessCheck, load_config
 except ImportError:
     from .guide_qa_config import GuideConfig, ReadinessCheck, load_config
+
+# lualatex recovers from many real errors and still emits a PDF, so a build check
+# that only runs "test -f main.pdf" passes despite them. Scan the build log too.
+_LATEX_ERROR_RE = re.compile(
+    r"(?m)^(?:\! .*|.*\.tex:\d+: (?:Missing|Undefined|Extra|Runaway|LaTeX Error|invalid).*)$"
+)
 
 
 @dataclass
@@ -93,6 +100,20 @@ def run_readiness_check(check: ReadinessCheck, config: GuideConfig) -> CheckResu
         output = result.stdout.strip()
         if result.stderr.strip():
             output += f"\n[stderr] {result.stderr.strip()}"
+
+        # A build check that produced a PDF can still hide LaTeX errors that lualatex
+        # recovered from. For build/compile checks, scan the build log and fail on them.
+        if passed and any(k in check.name.lower() for k in ("build", "compile")):
+            guide_dir = getattr(config, "guide_dir", "guide") or "guide"
+            log_path = config.config_path.parent / guide_dir / "main.log"
+            if log_path.exists():
+                errs = _LATEX_ERROR_RE.findall(log_path.read_text(errors="replace"))
+                if errs:
+                    passed = False
+                    output += (
+                        f"\n[build-log] {len(errs)} LaTeX error(s) despite a PDF:\n"
+                        + "\n".join(errs[:8])
+                    )
 
         return CheckResult(
             name=check.name,
