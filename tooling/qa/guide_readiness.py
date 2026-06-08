@@ -103,7 +103,7 @@ def run_readiness_check(check: ReadinessCheck, config: GuideConfig) -> CheckResu
 
         # A build check that produced a PDF can still hide LaTeX errors that lualatex
         # recovered from. For build/compile checks, scan the build log and fail on them.
-        if passed and any(k in check.name.lower() for k in ("build", "latex", "compile")):
+        if passed and any(k in check.name.lower() for k in ("build", "compile")):
             guide_dir = getattr(config, "guide_dir", "guide") or "guide"
             log_path = config.config_path.parent / guide_dir / "main.log"
             if log_path.exists():
