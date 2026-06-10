@@ -231,6 +231,75 @@ Chapter openers carry 3-5 strategic Pattern/Interview notes; per-drill
 margin is one `\practicemargin` with time + technique. See density table
 above.
 
+## Currency appendices (E/F)
+
+The two appendices that most distinguish a *polished* guide from a merely
+correct one: appendix **E** keeps the guide honest about a moving field, and
+appendix **F** shows the reader where the book's confident claims are actually
+contested. Together they are **Gold gate G7** (see
+[`tier_model.md`](tier_model.md) §Gold). Both are **filename-keyed** — the gate
+matches the exact filenames below, not the appendix slot letter.
+
+### E — `E_post_course_updates.tex` (post-course updates)
+
+Tracks what has shifted *out from under* the book since it was written: tooling
+that versions on its own clock, model names and pricing, and — for a MEAP — the
+source text itself. Required elements:
+
+1. **A date stamp** — "current as of YYYY-MM" near the top. The velocity SLA
+   (G7) measures the appendix's age from this stamp; an undated E cannot pass.
+2. **A "what still holds" section** — name the conceptual spine that is *stable*
+   (the discipline, not the API) so the reader knows what *not* to chase. A
+   `checkpointbox` titled "What This Guide Covers" works well.
+3. **≥3 substantive currency items**, each naming a concrete moving surface — a
+   library/API call, a model name, a pricing snapshot, a structured-output mode,
+   or (MEAP) chapter churn. Either framing clears the substance bar:
+   - *Re-verify* framing (common for settled/discipline books): "the book
+     standardizes on `gpt-4o` at ≈\$2.50/M in, \$10/M out — a snapshot; verify
+     current model IDs and pricing before costing a batch."
+   - *Changelog* framing (for fast-moving tooling books): "book uses X (Ch. N);
+     the library now requires Y — migration: …".
+4. **MEAP version-tie** (MEAP guides only) — name the covered MEAP version and
+   date the appendix at-or-after it; add a "MEAP churn to re-sync" section
+   listing what a newer drop could move (chapter count/order, running examples,
+   LOS phrasing).
+
+A stub **fails**: "*No significant breaking changes identified yet.*" is a
+placeholder, not an E appendix. Worked exemplars:
+`manning_learn_ai_data_engineering` (MEAP, version-tied) and `manning_causal_ai`
+(published) — both follow the four-section pattern above.
+
+### F — `F_contrasting_opinions_open_debates.tex` (contrasting opinions)
+
+The honest counterweight to an opinionated book: for each major stance the book
+takes, lay out the strongest case *against*. Required: **≥3 open debates**, each
+structured as:
+
+- **The debate** — one paragraph framing the tension, with chapter refs
+  (`\cref{ch:Mn}`) to where the book takes its stance.
+- **Position A** and **Position B** — each stated in its strongest form and
+  **dual-sourced** (a real citation per side, not a straw man).
+- **Where the book sits** — name the book's position explicitly + the chapter,
+  and concede what the opposing view gets right.
+- **Verdict flag** — *well-supported* / *contested* / *dated* (the book's
+  self-assessment, not a claim of absolute truth).
+- **Open question** — what would resolve it; what to watch next.
+
+Tier the evidence in prose so the reader can weight it: **T1** peer-reviewed /
+preprint / lab report, **T2** institutional or first-party material with a
+stake, **T3** practitioner essay or analyst note. Anchor exemplar:
+`manning_causal_ai` (six debates D1–D6, dual-sourced positions, verdict flags,
+T1/T2/T3 tiers). F is waiverable where a field genuinely has no live debates
+(`gold_exceptions.debates_waiver` + justification).
+
+### Source verification (ties to G5)
+
+Both appendices make verifiable claims, so the guide's `review/gold_audit_*.md`
+must carry an **"E/F source verification"** section (Gold G5) recording that
+each F debate's cited sources were spot-checked against the live web and that
+the E appendix's named surfaces (versions, prices, APIs) were confirmed current
+as of its date stamp.
+
 ## Reference
 
 - Convenience macros: per-guide `notes/notebook/notebook-extensions.sty`.

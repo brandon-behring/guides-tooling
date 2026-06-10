@@ -1,16 +1,17 @@
 # Audit Catalog
 
-The full set of audit and validation tooling. Replaces the partial 6-script
-list in the old Manning gold spec; documents the 10 audit scripts that
-actually exist plus all validation, build, and fleet-level commands.
+The full set of audit and validation tooling — the **11 per-guide audit
+scripts** plus all validation, build, and fleet-level commands.
 
-(Note: `audit_atomicity` was promoted from advisory to Gold-blocking on
-2026-04-24 per `reports/tier_spec_effectiveness_audit_20260424.md` §A;
-the script count in `shared/audits/` is unchanged at 10, but the Gold
-G2 11-audit clean check now includes atomicity in addition to the
-original 10. The historical "10 audits" wording is preserved here for
-the directory listing; "11 audits" appears in the Gold gate description
-at `tier_model.md` §Gold to reflect atomicity's new status.)
+**Gold G2 gates on all 11 audits.** The eleven `audit_*.py` scripts are
+`atomicity`, `back_content`, `card_presentation`, `card_quality`,
+`content_freshness`, `content_quality`, `crossref_quality`, `margin_quality`,
+`retrieval_coverage`, `solution_quality`, and `term_consistency`. Two were
+historically miscounted as outside the suite: `audit_atomicity` was advisory
+until promoted to Gold-blocking on 2026-04-24, and `audit_back_content` has
+always existed in the audits directory but was never wired into Gold — both are
+now part of the G2 set, so the true count is **11, not 10**. The eleven names
+here must match the G2 list in [`tier_model.md`](tier_model.md) §Gold exactly.
 
 ### Content & retrieval
 
@@ -26,6 +27,7 @@ at `tier_model.md` §Gold to reflect atomicity's new status.)
 | Script | Measures |
 |--------|----------|
 | `audit_card_quality.py` | Back-length distribution; broken LaTeX; ID collisions; type distribution; LOS traceability |
+| `audit_back_content.py` | Card-back substance: empty / near-empty backs, front↔back duplication (Jaccard ≥0.85), stub answers, structure-less backs. Grades on **CRITICAL / HIGH / MEDIUM / INFO** severities; Gold G2 gates on **zero CRITICAL + zero HIGH** (MEDIUM/INFO advisory). The one severity-graded audit — the other ten are binary `FAIL`/pass. |
 | `audit_card_presentation.py` | LaTeX rendering correctness; MathJax conversion (`$...$` → `\(...\)`); formatting (run-on lists, inline headers) |
 | `audit_atomicity.py` | Card granularity (atomic / borderline / compound); emits `FAIL <guide>: N compound card(s)` when any compound cards present, which Gold G2 catches via `FAIL_RE`. **Gold-blocking** as of 2026-04-24 per `tier_model.md` §Gold. Use `--check` for an exit-code signal in CI. |
 | `audit_term_consistency.py` | Duplicate or conflicting term definitions across chapters (e.g., "CUPED" defined twice with different wording) |
@@ -123,21 +125,25 @@ comparison but its Gate 5 (file-exists) is too permissive; invoking it
 prints a runtime stderr deprecation banner. Use `audit_gold.py`.
 
 Gold classification runs in a separate script from the Bronze + Silver
-fleet audit because it invokes the 11-audit suite (10 in `shared/audits/`
-plus atomicity-as-Gold-gate per `tier_model.md` §Gold), which is too
-expensive to run on every Bronze sweep. Only Silver-PASS guides are
-evaluated (Bronze or Silver-FAIL guides are not Gold-eligible).
+fleet audit because it invokes the full 11-audit suite (all eleven
+`audit_*.py` scripts per `tier_model.md` §Gold), which is too expensive
+to run on every Bronze sweep. Only Silver-PASS guides are evaluated
+(Bronze or Silver-FAIL guides are not Gold-eligible).
 
-Per-guide classification (post-2026-04-24 tightening):
+Per-guide classification:
 
-- `PASS` — all 6 hardened Gold gates pass on the current checkout.
-  Equivalent to "Gold-Audit-Clean" per `tier_model.md` §Gold.
-- `SCAFFOLD-ONLY` — auto gates pass but G5 doc is a template scaffold.
-- `GOLD-ELIGIBLE` — auto gates pass but G5 doc is missing entirely.
-- `FAIL` — any of G1, G2, G3, G4, or G6 fails.
+- `PASS` — all seven Gold gates (G1–G7) pass on the current checkout.
+- `SCAFFOLD-ONLY` — auto gates pass but the G5 source-fidelity doc is a
+  template scaffold (scaffold signatures / author-"TBV" placeholders).
+- `GOLD-ELIGIBLE` — auto gates pass but the G5 doc is missing entirely.
+- `FAIL` — any of G1–G7 fails.
 
-The "Gold + manual attestation" sub-tier per `tier_model.md` §Gold is
-aspirational; no automated classification today.
+There is a single Gold tier (the former manual-attestation sub-tier is
+retired per `tier_model.md` §Gold). **Runner status:** G7 (the E/F
+currency appendices) and the `back_content` severity gate are part of the
+Gold *standard* as of this definition; the runner port that implements
+them is roadmap T2 — until it lands, the live runner checks G1–G6 over the
+original ten binary audits.
 
 The Gold report header now includes git SHA + dirty status + UTC
 timestamp so saved reports can be checked against the checkout that
