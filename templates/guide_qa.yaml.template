@@ -16,6 +16,12 @@ los:
   prefix: "{{LOS_PREFIX}}"
   valid_levels: [define, explain, calculate, compare, analyze, evaluate, design, apply, debug, trace]
 
+# Gold tier velocity (uncomment when targeting Gold — see tier_model.md §Gold G7).
+# Sets the E-appendix (post-course-updates) freshness SLA. Omit or leave null to
+# inherit the topic-shelf default (fast 6mo / medium 12 / slow 18; roadmap T1).
+# gold:
+#   velocity: null   # fast | medium | slow
+
 metrics:
   los_count:
     description: "Learning Outcomes defined"
@@ -79,3 +85,9 @@ readiness_checks:
 #   # justification naming the affected metrics + a follow-up issue link.
 #   dashboard_red_waiver: "false"
 #   dashboard_red_waiver_justification: ""
+#
+#   # Set to "true" to waive the G7 F-appendix (contrasting-opinions / open-
+#   # debates) requirement when the guide's field has no live debates to
+#   # document. Requires a non-empty justification.
+#   debates_waiver: "false"
+#   debates_waiver_justification: ""

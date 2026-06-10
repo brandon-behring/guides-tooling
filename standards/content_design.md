@@ -265,9 +265,11 @@ source text itself. Required elements:
    LOS phrasing).
 
 A stub **fails**: "*No significant breaking changes identified yet.*" is a
-placeholder, not an E appendix. Worked exemplars:
-`manning_learn_ai_data_engineering` (MEAP, version-tied) and `manning_causal_ai`
-(published) — both follow the four-section pattern above.
+placeholder, not an E appendix. Worked structural exemplars:
+`manning_learn_ai_data_engineering` (MEAP — all four sections, version-tied) and
+`manning_causal_ai` (published — three sections; element 4 is MEAP-only). Both
+satisfy every element **except the date stamp** (element 1), which must be added
+before they pass G7; they are otherwise complete templates to copy.
 
 ### F — `F_contrasting_opinions_open_debates.tex` (contrasting opinions)
 

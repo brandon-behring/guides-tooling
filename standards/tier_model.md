@@ -125,8 +125,9 @@ guides with legitimate stylistic variation:
 **Gold = Silver + all seven gates (G1–G7) passing live on the current
 checkout.** There is a single Gold tier; the former two-sub-tier split (an
 automated tier plus an aspirational reviewer-attestation tier) is retired —
-"Gold" means audit-clean on a live run (see [Non-goals in the
-roadmap](../../ROADMAP.md)). Gold is a **living status**: the gates are
+"Gold" means audit-clean on a live run (the consuming repo's `ROADMAP.md`
+§Non-goals records the no-manual-attestation-sub-tier decision). Gold is a
+**living status**: the gates are
 re-checked against the working tree, so a guide can *lapse* — a dashboard RED
 regression (G6) or a currency appendix that ages past its velocity SLA (G7)
 drops a guide out of Gold until it is refreshed.
@@ -145,17 +146,20 @@ The seven gates:
   (which grades on CRITICAL / HIGH / MEDIUM / INFO severities) gates on **zero
   CRITICAL and zero HIGH** — MEDIUM and INFO are advisory. `audit_catalog.md` is
   authoritative for each audit's semantics; the eleven names here and there must
-  match exactly.
+  match exactly. *Runner status:* the live runner today gates the ten binary
+  audits; the `back_content` severity gate activates with the runner port
+  (roadmap T2 — see `audit_catalog.md`).
 - **G3 — per-chapter decks build clean.** `make decks` exits 0 AND emits at least
-  `max(2, chapters − 1)` per-chapter `.apkg` files AND the guide's
-  `anki.course_map` covers every module. Decks are gitignored and rebuilt on
-  demand, so this is a **live build check, not an artifact count**. Small guides
-  may waive the per-chapter requirement via `gold_exceptions.decks_complete_only`.
+  `max(2, chapters - 1)` per-chapter `.apkg` files **plus the complete/combined
+  deck** AND the guide's `anki.course_map` covers every module. Decks are
+  gitignored and rebuilt on demand, so this is a **live build check, not an
+  artifact count**. Small guides may waive the per-chapter requirement via
+  `gold_exceptions.decks_complete_only` (the complete deck is still required).
 - **G4 — size-aware crossref floor.** Guides with ≥10 chapters require ≥6
   `\crossrefmargin` notes spanning ≥4 distinct chapter files; smaller guides
   require ≥ `max(2, min(4, chapters/4))` notes across ≥ `max(2, min(3, chapters/3))`
-  files. (The former family-detection branch is dropped — this is an all-Manning
-  fleet.)
+  files. (The former family-detection branch is dropped; the consuming
+  guides-manning fleet is all-Manning.)
 - **G5 — source-fidelity doc.** `review/gold_audit_*.md` must contain ≥500
   non-template words and ≥3 source-citation markers (`book §`, `Ch N`, `Figure N`,
   `Table N`, `p. N`); scaffold-signature text and author-"TBV" placeholders fail
@@ -172,15 +176,18 @@ The seven gates:
 - **G7 — currency & perspectives (the polish gate).** Two **filename-keyed**
   appendices under `guide/appendices/` (the gate matches the exact filenames, not
   appendix *slot* letters):
-  - `E_post_course_updates.tex` — **dated** ("current as of YYYY-MM"); a
-    *what-still-holds* source-stability section; and **≥3 substantive currency
-    items**, each naming a concrete moving surface (a library/API, a model name, a
-    pricing snapshot, or — for MEAP guides — specific chapter/source churn).
-    Either the "re-verify these named surfaces" framing *or* a literal "book says
-    X → the field now says Y" changelog satisfies the substance bar; a stub ("no
-    significant changes identified yet") **fails**. For MEAP guides the appendix
-    must name the **covered MEAP version** and be dated at-or-after it. The date
-    must fall **within the guide's velocity SLA** (below); a stale E lapses Gold.
+  - `E_post_course_updates.tex` — **dated** (the literal string `current as of
+    YYYY-MM` in the appendix's opening paragraph, so the runner can parse the
+    age); a *what-still-holds* source-stability section; and **≥3 substantive
+    currency items**, each naming a concrete moving surface (a library/API, a
+    model name, a pricing snapshot, or — for MEAP guides — specific chapter/source
+    churn). Either the "re-verify these named surfaces" framing *or* a literal
+    "book says X → the field now says Y" changelog satisfies the substance bar; a
+    stub ("no significant changes identified yet") **fails**. For MEAP guides the
+    appendix must name the **covered MEAP version** (the authoritative value is the
+    MEAP-version field in `review/source_manifest.md`) and be dated at-or-after it.
+    The date must fall **within the guide's velocity SLA** (below); a stale E
+    lapses Gold.
     (Once the MEAP-freshness checker lands — roadmap T4 — a STALE freshness status
     also fails G7.)
   - `F_contrasting_opinions_open_debates.tex` — **≥3 open debates**, each with
@@ -260,10 +267,11 @@ nearly all).
   material is pedagogically central to the guide's purpose.
 - **Per-guide exception slots**: `guide_qa.yaml.gold_exceptions` is
   the audit-script-respected waiver schema. Current fields:
-  `decks_complete_only` + `justification` (G3 waiver) and
+  `decks_complete_only` + `justification` (G3 waiver),
   `dashboard_red_waiver` + `dashboard_red_waiver_justification`
-  (G6 waiver). Both require a non-empty justification to take effect;
-  see the §Gold subsection above for the YAML shape.
+  (G6 waiver), and `debates_waiver` + `debates_waiver_justification`
+  (G7 F-appendix waiver). All three require a non-empty justification
+  to take effect; see the §Gold subsection above for the YAML shape.
 - **Promotion gating**: a guide cannot claim a tier without all gating audits
   passing OR a documented exception in the source manifest.
 
@@ -359,9 +367,8 @@ presence of `guide_qa.yaml` itself.
 ## How tiers interact with families
 
 Tiers are universal. Per-family overlays calibrate the *thresholds* (e.g.,
-LOS counts) but not the *gates* (which audits must pass). A Manning Gold
-guide and a DLAI Gold guide both pass all 10 audits; they differ only in
-scale targets.
+LOS counts) but not the *gates* (which audits must pass). Every Gold guide
+passes all 11 audits (see §Gold G2); families differ only in scale targets.
 
 ## Promotion sequencing
 
@@ -369,10 +376,12 @@ scale targets.
   catalog and existing knowledge, write a real Appendix D, write a real
   `interview_connections.md`, populate the dashboard. Driven by the
   remediation plan.
-- **Silver → Gold**: close LOS retrieval gaps, fix audit failures one by
-  one, build per-chapter decks, add 2+ valid `\crossrefmargin{}`, spot-check
-  source fidelity in equation-heavy chapters.
+- **Silver → Gold**: close LOS retrieval gaps, fix audit failures one by one,
+  build per-chapter decks (plus the complete deck), meet the size-aware G4
+  crossref floor (§Gold G4), author the **E/F currency appendices** (§Gold G7,
+  per [`content_design.md`](content_design.md) §"Currency appendices"), write the
+  `review/gold_audit_*.md` fidelity doc, and spot-check source fidelity in
+  equation-heavy chapters.
 
-Each promotion is a separate sprint per guide; the
-[remediation plan](../../plans/standards_remediation_2026-04-19.md)
-sequences them.
+Each promotion is a separate sprint per guide; the Gold waves are sequenced in
+the consuming repo's `ROADMAP.md` (Track G).

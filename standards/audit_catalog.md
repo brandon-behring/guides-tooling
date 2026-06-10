@@ -6,12 +6,13 @@ scripts** plus all validation, build, and fleet-level commands.
 **Gold G2 gates on all 11 audits.** The eleven `audit_*.py` scripts are
 `atomicity`, `back_content`, `card_presentation`, `card_quality`,
 `content_freshness`, `content_quality`, `crossref_quality`, `margin_quality`,
-`retrieval_coverage`, `solution_quality`, and `term_consistency`. Two were
-historically miscounted as outside the suite: `audit_atomicity` was advisory
-until promoted to Gold-blocking on 2026-04-24, and `audit_back_content` has
-always existed in the audits directory but was never wired into Gold — both are
-now part of the G2 set, so the true count is **11, not 10**. The eleven names
-here must match the G2 list in [`tier_model.md`](tier_model.md) §Gold exactly.
+`retrieval_coverage`, `solution_quality`, and `term_consistency`. The count
+moved from 10 to 11 because `audit_back_content` — which has always existed in
+the audits directory but was never wired into Gold — is now gated; it is the one
+genuinely new member. (`audit_atomicity` was *already* in the gated set; on
+2026-04-24 it was promoted from advisory to Gold-blocking, but it was not newly
+added — do not re-wire it.) The eleven names here must match the G2 list in
+[`tier_model.md`](tier_model.md) §Gold exactly.
 
 ### Content & retrieval
 
@@ -27,7 +28,7 @@ here must match the G2 list in [`tier_model.md`](tier_model.md) §Gold exactly.
 | Script | Measures |
 |--------|----------|
 | `audit_card_quality.py` | Back-length distribution; broken LaTeX; ID collisions; type distribution; LOS traceability |
-| `audit_back_content.py` | Card-back substance: empty / near-empty backs, front↔back duplication (Jaccard ≥0.85), stub answers, structure-less backs. Grades on **CRITICAL / HIGH / MEDIUM / INFO** severities; Gold G2 gates on **zero CRITICAL + zero HIGH** (MEDIUM/INFO advisory). The one severity-graded audit — the other ten are binary `FAIL`/pass. |
+| `audit_back_content.py` | Card-back substance: empty / near-empty backs, front↔back duplication (Jaccard ≥0.85), stub answers, structure-less backs. Grades on **CRITICAL / HIGH / MEDIUM / INFO** severities; Gold G2 gates on **zero CRITICAL + zero HIGH** (MEDIUM/INFO advisory). The one severity-graded audit — the other ten are binary `FAIL`/pass. **Runner contract (T2):** it emits severity-tagged findings, **not** `FAIL` lines, so the Gold runner must gate on parsed CRITICAL/HIGH counts (or a `--fail-on high` exit code) — `FAIL_RE` alone would silently always-pass. Its CLI flag is `--guides` (not `--guide`). |
 | `audit_card_presentation.py` | LaTeX rendering correctness; MathJax conversion (`$...$` → `\(...\)`); formatting (run-on lists, inline headers) |
 | `audit_atomicity.py` | Card granularity (atomic / borderline / compound); emits `FAIL <guide>: N compound card(s)` when any compound cards present, which Gold G2 catches via `FAIL_RE`. **Gold-blocking** as of 2026-04-24 per `tier_model.md` §Gold. Use `--check` for an exit-code signal in CI. |
 | `audit_term_consistency.py` | Duplicate or conflicting term definitions across chapters (e.g., "CUPED" defined twice with different wording) |
@@ -128,7 +129,10 @@ Gold classification runs in a separate script from the Bronze + Silver
 fleet audit because it invokes the full 11-audit suite (all eleven
 `audit_*.py` scripts per `tier_model.md` §Gold), which is too expensive
 to run on every Bronze sweep. Only Silver-PASS guides are evaluated
-(Bronze or Silver-FAIL guides are not Gold-eligible).
+(Bronze or Silver-FAIL guides are not Gold-eligible). **No in-repo Gold
+runner exists yet** — Gold cannot be verified live in `guides-manning`
+today; the runner is roadmap T2 (the legacy `audit_gold.py` referenced
+here lives in the old `course_learning` monorepo and covers G1–G6 only).
 
 Per-guide classification:
 
