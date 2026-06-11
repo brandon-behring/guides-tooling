@@ -23,4 +23,5 @@ packages = [
     "tooling.qa",
     "tooling.audits",
     "tooling.audits.fleet",
+    "tooling.audits.guide",
 ]
