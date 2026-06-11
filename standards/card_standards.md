@@ -6,7 +6,7 @@ convention, and deck configuration. Consolidates and supersedes
 
 ## Card type catalog (20+ types)
 
-Supported by `shared/cards/extract_cards.py`. Each card type is extracted from
+Supported by `tooling.cards.extract_cards`. Each card type is extracted from
 a specific LaTeX macro or environment. All types accept an optional `[LOS-ID]`
 parameter linking the card to a learning outcome.
 
@@ -43,7 +43,7 @@ parameter linking the card to a learning outcome.
 | `pitfall` | `\pitfall{...}` | Pitfall boxes |
 | `generatefirst` | `\begin{generatefirst}...` | Generation-before-reading prompts |
 
-Machine-readable list: `shared/config/canonical_values.yaml` (`card_types`
+Machine-readable list: `tooling/config/canonical_values.yaml` (`card_types`
 key, split into `common` and `specialized`).
 
 ## Card YAML schema
@@ -71,7 +71,7 @@ Examples:
 - `trb-m1-1-TERM-cuped` (RLHF Book, module 1, chapter 1, term card on CUPED)
 - `bll-m3-2-PROBLEM-bpe-training` (LLM from Scratch, module 3, chapter 2)
 
-Enforcement: `extract_cards.py` maintains a `seen_ids` set and fails
+Enforcement: `tooling.cards.extract_cards` maintains a `seen_ids` set and fails
 extraction on collision. IDs are deterministic (same LaTeX input → same ID
 across rebuilds).
 
@@ -295,11 +295,11 @@ Some blocks are preserved as-is (never reformatted):
 - `\begin{tabular}` — tables
 - `\begin{equation}` — display equations
 
-The `fix_card_presentation.py` automation skips cards containing these.
+The card-presentation fix automation skips cards containing these.
 
 ## Scaffolding levels
 
-Assigned automatically by `extract_cards.py` based on card type:
+Assigned automatically by `tooling.cards.extract_cards` based on card type:
 
 | Type | Default scaffolding |
 |------|---------------------|
@@ -314,8 +314,8 @@ parameter (and similar for other scaffolded types).
 ## LOS traceability
 
 100% of learning-objective cards (problem, vignette, interview, drill) must
-carry a valid `los_id`. Measured by
-`shared/audits/audit_card_quality.py`.
+carry a valid `los_id`. Measured by the `audit_card_quality` per-guide audit
+(`tooling.audits.guide.*`; see [`audit_catalog.md`](audit_catalog.md)).
 
 ## Anki deck configuration
 
@@ -334,7 +334,7 @@ anki:
     # ... one entry per module
 ```
 
-Worked example: `manning_rlhf_book/guide_qa.yaml`.
+Worked example: `evaluation-alignment-safety/manning_rlhf_book/guide_qa.yaml`.
 
 Large guides should produce per-chapter `.apkg` decks plus a complete deck.
 Small guides may produce only a complete deck if documented in
@@ -361,8 +361,8 @@ Anti-patterns include: empty backs, TODO/PLACEHOLDER scaffolds,
 truncation with trailing `...`, front-back duplication, and "see
 Chapter X" evasive references with no actual content.
 
-Per-card-type minimum back length (enforced by
-`shared/audits/audit_back_content.py`):
+Per-card-type minimum back length (enforced by the `audit_back_content`
+per-guide audit):
 
 | Type | Min chars | Type | Min chars |
 |------|-----------|------|-----------|
@@ -390,27 +390,21 @@ Per-type structural requirements (HIGH-severity audit findings):
 front-back-duplicate checks (the answer lives in the front via
 `{{c1::...}}` markers).
 
-Run the audit per guide:
-```bash
-make -C <guide>/notes/notebook audit-back-content
-```
-
-Or fleet-wide:
-```bash
-python3 shared/audits/audit_back_content.py
-```
+The `audit_back_content` per-guide audit ports into `tooling.audits.guide.*` in
+roadmap T1; the Gold runner gates on it (CRITICAL+HIGH=0) in T2. Until those land it
+is **not** wired into a `make` target here — run the legacy `audit_back_content.py`
+from the `course_learning` repo.
 
 Baseline thresholds (per guide, regression-checked):
-`shared/qa/card_quality_baseline.json` — `back_content` section.
+each guide's `card_quality_baseline.json` — `back_content` section.
 
 ## Reference
 
-- Extractor: `shared/cards/extract_cards.py` (2800+ lines).
-- Deck builder: `shared/anki/yaml_to_apkg.py`.
-- Presentation fix: `scripts/fix_card_presentation.py`.
-- Splitter: `scripts/split_long_cards.py`.
-- Audits: `audit_card_quality.py`, `audit_card_presentation.py`,
-  `audit_atomicity.py`, `audit_term_consistency.py`,
-  `audit_back_content.py` (back-content quality) — see
+- Extractor: `tooling.cards.extract_cards` (2800+ lines).
+- Deck builder: `tooling.anki.yaml_to_apkg`.
+- Audits: `audit_card_quality`, `audit_card_presentation`,
+  `audit_atomicity`, `audit_term_consistency`,
+  `audit_back_content` (back-content quality) — the per-guide audit
+  suite (`tooling.audits.guide.*`), see
   [`audit_catalog.md`](audit_catalog.md).
-- Machine-readable card type list: `shared/config/canonical_values.yaml`.
+- Machine-readable card type list: `tooling/config/canonical_values.yaml`.

@@ -3,9 +3,10 @@
 Standard for how guides cross-reference each other via `\crossrefmargin{}`
 and how they participate in the cross-guide learning graph.
 
-This file owns the **standard**. The actual learning graph (which guide leads
-to which) lives in [`docs/architecture.md`](../../architecture.md). This
-file points there but does not duplicate it.
+This file owns the **standard** for authoring those references. The cross-guide
+learning graph itself is emergent — it is the set of `\crossrefmargin{}` edges
+across the fleet, not a separate document. (A consolidated study-order map is
+roadmap C1, `STUDY_ORDER.md`, not yet in-repo.)
 
 ## Cross-reference policy
 
@@ -74,14 +75,13 @@ prerequisite and at least 1 follow-on (where they exist in the fleet).
 - No circular hard prerequisites (A → B → A).
 - Required directional language (not just "see X").
 
-## Architecture graph
+## The cross-guide graph
 
-For the full prerequisite graph, learning paths by goal, and topic matrix:
-[`docs/architecture.md`](../../architecture.md).
-
-This standards file does not duplicate the graph — when the graph changes,
-edit `architecture.md`. When the *standard for how to cross-reference*
-changes, edit this file.
+The cross-guide learning graph is not a separate document: it is the set of
+`\crossrefmargin{}` edges authored across the fleet (each note names what another
+guide provides). A consolidated prerequisite map / learning-paths-by-goal view is
+roadmap C1 (`STUDY_ORDER.md`), not yet in-repo. This file owns only the
+*standard for how to cross-reference*.
 
 ## Migration note (2026-04-19)
 
@@ -92,7 +92,7 @@ no MEAP-related rename remediation to do.
 
 ## Reference
 
-- Macro: `\crossrefmargin{...}` in per-guide `notebook-extensions.sty`.
-- Audit: `audit_crossref_quality.py`.
-- Graph: `docs/architecture.md`.
+- Macro: `\crossrefmargin{...}` in per-guide `guide/notebook-extensions.sty`.
+- Audit: the `audit_crossref_quality` per-guide audit (see [`audit_catalog.md`](audit_catalog.md)).
+- Graph: emergent from the fleet's `\crossrefmargin{}` edges; consolidated map = roadmap C1 (`STUDY_ORDER.md`).
 - Per-category craft for cross-ref notes: `content_design.md` §[Cross-Ref].

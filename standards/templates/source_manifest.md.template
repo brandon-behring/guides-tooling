@@ -1,8 +1,8 @@
 ---
 guide_slug: <slug>
-family: <manning | dlai | deeplearning_ai | coursera | other>
-canonical_source_path: <e.g., "chapters/" or "code/book/chapters/" or "scripts/course_structures/<slug>/raw/transcripts/">
-extraction_pipeline: <pdf | livebook_playwright | docling | vtt_dlai | vtt_coursera | manual>
+category: manning
+canonical_source_path: <e.g., "source/chapters/" or "code/book/chapters/">
+extraction_pipeline: <pdf | livebook_playwright | docling | manual>
 extraction_dates:
   initial: <YYYY-MM-DD>
   latest_verification: <YYYY-MM-DD>
@@ -15,14 +15,14 @@ extraction_tool_versions:
 
 ## Source Metadata
 
-- **Title**: <book or course title>
-- **Authors / Instructors**: <names>
-- **Publisher / Platform**: <Manning | DeepLearning.AI | Coursera | other>
-- **URL**: <publisher liveBook URL / DLAI course URL / Coursera specialization URL>
+- **Title**: <book title>
+- **Authors**: <names>
+- **Publisher**: Manning Publications
+- **URL**: <Manning product page / liveBook URL>
 - **Publication status**: <published | meap | not_started>
 - **Publication / release date**: <YYYY-MM>
 - **Page count (source)**: <integer>
-- **Workspace path**: <e.g., manning_rlhf_book>
+- **Workspace path**: <e.g., <topic>/manning_rlhf_book>
 
 ## Source Material Inventory
 
@@ -55,14 +55,6 @@ extraction_tool_versions:
 - **Missing future chapters**: <list or "none expected">
 - **Latest source verification**: <YYYY-MM-DD>
 
-## Specialization Metadata (Coursera multi-course only)
-
-- **Specialization slug**: <slug>
-- **Course count**: <integer>
-- **Total weeks**: <integer>
-- **Total assignments**: <integer>
-- **Primary instructors**: <names>
-
 ## Companion Code Status
 
 - **Has code**: <true | false>
@@ -72,22 +64,8 @@ extraction_tool_versions:
   - **Acquisition method**: <git clone | unzip | manual copy>
   - **Last sync**: <YYYY-MM-DD>
 - **If false**:
-  - **Rationale**: <e.g., "Course is about using a tool; no implementation code">
-  - **Alternative artifacts**: <e.g., "Instructor-provided demo notebooks at <URL>">
-
-## Family-Specific Fields
-
-[See per-family overlay for additional required fields:
-- Manning: `docs/standards/10_manning/overlay.md`
-- DLAI: `docs/standards/20_dlai/overlay.md`
-- Coursera: `docs/standards/30_coursera/overlay.md`
-- Other: `docs/standards/99_other/overlay.md`]
-
-## Family-Not-Listed Exception (99_other only)
-
-- **Closest family analogue**: <Manning | DLAI | Coursera>
-- **Why this guide diverges**: <e.g., "Math-reference manuscript with no platform-extracted source">
-- **Promotion criterion**: <e.g., "Promote out of 99_other when ≥3 similar guides exist">
+  - **Rationale**: <e.g., "Book is about a methodology; no implementation code">
+  - **Alternative artifacts**: <e.g., "Author-provided demo notebooks at <URL>">
 
 ## Remediation Notes
 
@@ -97,6 +75,6 @@ the source, or any decisions deferred to future sprints.]
 ---
 
 > This file follows the schema at
-> `docs/standards/templates/source_manifest.md.template`. When the schema
+> `tooling/standards/templates/source_manifest.md.template`. When the schema
 > changes, regenerate or update this file. See
-> `docs/standards/00_universal/document_lifecycle.md` for the lifecycle policy.
+> `tooling/standards/document_lifecycle.md` for the lifecycle policy.
