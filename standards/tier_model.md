@@ -46,7 +46,7 @@ Bronze plus:
   - any canonical IC.md section whose minimum substantive-word count is
     below **30**. A `IC_STUB_WORD_FLOOR = 15` tripwire remains in the
     code as a hard-stub catch.
-  Exemplar: `manning_llm_from_scratch/review/interview_connections.md`
+  Exemplar: `llms-and-transformers/manning_llm_from_scratch/review/interview_connections.md`
   (4 mapped interview questions with cross-volume references).
 - **LOS / chapter refs in Appendix D** — at least one `\cref{ch:...}`,
   `\ref{ch:...}`, or per-guide LOS-prefix token (e.g., `RSP-4.1`) must
@@ -113,8 +113,9 @@ The seven gates:
   (which grades on CRITICAL / HIGH / MEDIUM / INFO severities) gates on **zero
   CRITICAL and zero HIGH** — MEDIUM and INFO are advisory. `audit_catalog.md` is
   authoritative for each audit's semantics; the eleven names here and there must
-  match exactly. *Runner status:* the live runner today gates the ten binary
-  audits; the `back_content` severity gate activates with the runner port
+  match exactly. *Runner status:* there is no in-repo Gold runner yet — the
+  legacy `course_learning` runner covers the ten binary audits (G1–G6); the
+  `back_content` severity gate and G7 activate with the in-repo runner port
   (roadmap T2 — see `audit_catalog.md`).
 - **G3 — per-chapter decks build clean.** `make decks` exits 0 AND emits at least
   `max(2, chapters - 1)` per-chapter `.apkg` files **plus the complete/combined
@@ -222,9 +223,9 @@ nearly all).
 
 ## Failure semantics (per critique overlooked §9)
 
-- **No-code books**: Manning books explicitly marked no-code in
-  `manning_catalog.yaml` (`has_code: false`) and in the source manifest do
-  NOT need companion-code evidence. They may still be Gold.
+- **No-code books**: Manning books explicitly marked no-code in their
+  `review/source_manifest.md` (`has_code: false`) do NOT need companion-code
+  evidence. They may still be Gold.
 - **Short-source guides** (<3 hours of source material): may scale LOS and
   chapter targets to 4-6 / 3-5 respectively when documented in their source
   manifest. Still eligible for Gold at the calibrated targets.
@@ -313,10 +314,10 @@ to use the tech stack, career-fit, how sub-courses compose).
 
 Some directories under the repo root are NOT course guides (curriculum
 or reading-list documents, infrastructure dirs) and are therefore out of
-scope for Bronze/Silver/Gold tier evaluation. The fleet auditors
-(`tooling.audits.fleet.audit_all_courses`,
-`tooling.audits.fleet.audit_silver_fleet`,
-`tooling.audits.fleet.audit_silver`) skip them via `EXCLUDE_DIRS`.
+scope for Bronze/Silver/Gold tier evaluation.
+`tooling.audits.fleet.audit_all_courses` skips them via its `EXCLUDE_DIRS`; the
+Silver auditors (`tooling.audits.fleet.audit_silver`, `audit_silver_fleet`)
+rely on `guide_qa.yaml` discovery (`tooling.discovery.iter_guide_dirs`) instead.
 
 A directory becomes a tier-tracked guide the moment it gains a
 `guide_qa.yaml`. Adding a non-guide dir to `EXCLUDE_DIRS` is a

@@ -1,7 +1,10 @@
 # Audit Catalog
 
 The full set of audit and validation tooling — the **11 per-guide audit
-scripts** plus all validation, build, and fleet-level commands.
+scripts** plus all validation, build, and fleet-level commands. (This catalogs
+the per-guide suite by name + semantics; the code ports to
+`tooling.audits.guide.*` in roadmap T1 and currently lives in the old
+`course_learning` repo.)
 
 **Gold G2 gates on all 11 audits.** The eleven `audit_*.py` scripts are
 `atomicity`, `back_content`, `card_presentation`, `card_quality`,
@@ -110,9 +113,8 @@ python3 -m tooling.audits.fleet.audit_all_courses --summary
   on each new run. (Update to the audit script to do this automatically is
   a follow-up.)
 
-The script supports `--help` and `--summary` only as of 2026-04-19. There is
-no `--dry-run` flag (an old standards doc claimed there was; that was
-incorrect and is now corrected).
+The script supports `--summary`, `--tier {bronze,silver,all}` (default `all`),
+and `--strict` (CI gate); there is no `--dry-run` flag.
 
 ### Gold fleet audit (separate runner)
 
@@ -148,13 +150,15 @@ There is a single Gold tier (the former manual-attestation sub-tier is
 retired per `tier_model.md` §Gold). **Runner status:** G7 (the E/F
 currency appendices) and the `back_content` severity gate are part of the
 Gold *standard* as of this definition; the runner port that implements
-them is roadmap T2 — until it lands, the live runner checks G1–G6 over the
-original ten binary audits.
+them is roadmap T2 — until it lands, the legacy `course_learning` runner
+covers G1–G6 over the original ten binary audits (and is not runnable here).
 
 The Gold report header now includes git SHA + dirty status + UTC
 timestamp so saved reports can be checked against the checkout that
-generated them. See `manning_rlhf_book/review/gold_audit_20260420.md`
-for the canonical G5 template.
+generated them. See
+`evaluation-alignment-safety/manning_rlhf_book/review/gold_audit_20260420.md`
+for the canonical G5 template (it exemplifies the original G5 sections only;
+G5's new "E/F source verification" section is not yet exemplified there).
 
 ## guide_qa.yaml schema
 
@@ -214,7 +218,7 @@ A guide is **Bronze** when this schema is present and audit checks pass; see
    `tooling/audits/fleet/audit_<name>.py` (fleet), following the existing
    pattern (CLI: `--guide <slug>` for single, `--all` for fleet).
 2. Add a row to the table above.
-3. Add the script name to `config/canonical_values.yaml`
+3. Add the script name to `tooling/config/canonical_values.yaml`
    (`audit_scripts` key).
 4. Wire into a Makefile QA target if it's per-guide.
 5. Reference from `tier_model.md` if it gates a tier.
@@ -225,5 +229,5 @@ A guide is **Bronze** when this schema is present and audit checks pass; see
   (the per-guide `tooling/audits/guide/` suite lands with roadmap T1)
 - All validations: `ls tooling/validation/`
 - Fleet audit: `make audit-all` (`tooling.audits.fleet.audit_all_courses`)
-- Machine-readable list: `config/canonical_values.yaml`
+- Machine-readable list: `tooling/config/canonical_values.yaml`
   (`audit_scripts` key)

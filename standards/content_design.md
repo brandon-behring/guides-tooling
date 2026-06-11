@@ -48,7 +48,7 @@ in authored chapters.
 `content-quality.md`, corrected 2026-04-19).
 
 Canonical macro source: per-guide `guide/notebook-extensions.sty`.
-Machine-readable mirror: `config/canonical_values.yaml`
+Machine-readable mirror: `tooling/config/canonical_values.yaml`
 (`margin_categories` key).
 
 ### Quality rules
@@ -305,7 +305,7 @@ as of its date stamp.
 ## Reference
 
 - Convenience macros: per-guide `guide/notebook-extensions.sty`.
-- Machine-readable enums: `config/canonical_values.yaml`.
+- Machine-readable enums: `tooling/config/canonical_values.yaml`.
 - Problem/vignette/drill macros: `tooling/latex/los-macros.sty`. See
   [`macro_catalog.md`](macro_catalog.md).
 - Quality metrics and targets: [`quality_targets.md`](quality_targets.md).
