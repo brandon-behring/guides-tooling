@@ -61,9 +61,10 @@ Two mechanisms exist to suppress such findings:
 Prefer `% freshness-ok` for attribution in body text; prefer `\warningmargin`
 when the deprecated name is being used as a cautionary example.
 
-## Validation scripts (`shared/validation/`)
+## Validation scripts (`tooling.validation`)
 
-Lower-level checks consumed by the Makefile QA targets.
+Lower-level checks consumed by the Makefile QA targets, each runnable as
+`python3 -m tooling.validation.<module>`.
 
 | Script | Purpose | Wired into Makefile target |
 |--------|---------|----------------------------|
@@ -74,7 +75,7 @@ Lower-level checks consumed by the Makefile QA targets.
 
 ## Per-guide Makefile QA targets
 
-Standard across guides; defined in each guide's `notes/notebook/Makefile`.
+Standard across guides; defined in each guide's `guide/Makefile`.
 
 | Target | Action |
 |--------|--------|
@@ -96,10 +97,11 @@ Standard across guides; defined in each guide's `notes/notebook/Makefile`.
 ## Fleet-level audit
 
 ```bash
-python3 scripts/audit_all_courses.py --summary
+make audit-all                                       # or:
+python3 -m tooling.audits.fleet.audit_all_courses --summary
 ```
 
-- Discovers courses by walking the repo for `guide_qa.yaml` files (118 today).
+- Discovers courses by walking the repo for `guide_qa.yaml` files (81 today).
 - Runs the 9-point structural checklist (see [`tier_model.md`](tier_model.md)
   §Bronze).
 - Writes a fresh `reports/qa_fleet_audit_<YYYYMMDD>.md`.
@@ -112,27 +114,27 @@ The script supports `--help` and `--summary` only as of 2026-04-19. There is
 no `--dry-run` flag (an old standards doc claimed there was; that was
 incorrect and is now corrected).
 
-### Gold fleet audit (separate script)
+### Gold fleet audit (separate runner)
 
-```bash
-python3 scripts/audit_gold.py                # all Silver-PASS guides
-python3 scripts/audit_gold.py --guide <slug>
-python3 scripts/audit_gold.py --verbose      # per-gate detail
-python3 scripts/audit_gold.py --report       # writes reports/qa_gold_<DATE>.md
-```
-
-The legacy `scripts/audit_gold_fleet.py` is retained for historical
-comparison but its Gate 5 (file-exists) is too permissive; invoking it
-prints a runtime stderr deprecation banner. Use `audit_gold.py`.
-
-Gold classification runs in a separate script from the Bronze + Silver
+Gold classification runs as a separate runner from the Bronze + Silver
 fleet audit because it invokes the full 11-audit suite (all eleven
 `audit_*.py` scripts per `tier_model.md` §Gold), which is too expensive
-to run on every Bronze sweep. Only Silver-PASS guides are evaluated
-(Bronze or Silver-FAIL guides are not Gold-eligible). **No in-repo Gold
-runner exists yet** — Gold cannot be verified live in `guides-manning`
-today; the runner is roadmap T2 (the legacy `audit_gold.py` referenced
-here lives in the old `course_learning` monorepo and covers G1–G6 only).
+to run on every Bronze sweep. **No in-repo Gold runner exists yet** —
+Gold cannot be verified live in `guides-manning` today. The runner is
+roadmap **T2**, landing as `tooling.audits.fleet.audit_gold` behind a
+`make audit-gold` target:
+
+```bash
+make audit-gold                                       # all Silver-PASS guides (T2)
+python3 -m tooling.audits.fleet.audit_gold --guide <slug>
+python3 -m tooling.audits.fleet.audit_gold --verbose  # per-gate detail
+python3 -m tooling.audits.fleet.audit_gold --report   # writes reports/qa_gold_<DATE>.md
+```
+
+Until T2 lands, the Gold runner source lives in the old `course_learning`
+monorepo (as `scripts/audit_gold.py`, covering G1–G6 only) and is not
+runnable from this repo. Only Silver-PASS guides are evaluated
+(Bronze or Silver-FAIL guides are not Gold-eligible).
 
 Per-guide classification:
 
@@ -151,24 +153,24 @@ original ten binary audits.
 
 The Gold report header now includes git SHA + dirty status + UTC
 timestamp so saved reports can be checked against the checkout that
-generated them. See `manning_rlhf_book/docs/review/gold_audit_20260420.md`
+generated them. See `manning_rlhf_book/review/gold_audit_20260420.md`
 for the canonical G5 template.
 
 ## guide_qa.yaml schema
 
 Required fields per guide. Authoritative template at
-`shared/templates/guide_qa.yaml.template`.
+`tooling/templates/guide_qa.yaml.template`.
 
 ```yaml
 guide:
   name: "Guide Display Name"
   version: "1.0"
-  guide_dir: "notes/notebook"
-  chapters_glob: "notes/notebook/chapters/*.tex"
-  appendices_glob: "notes/notebook/appendices/*.tex"
-  review_dir: "docs/review"
-  build_cmd: "make -C notes/notebook pilot"
-  full_build_cmd: "make -C notes/notebook digital"
+  guide_dir: "guide"
+  chapters_glob: "guide/chapters/*.tex"
+  appendices_glob: "guide/appendices/*.tex"
+  review_dir: "review"
+  build_cmd: "make -C guide pilot"
+  full_build_cmd: "make -C guide digital"
 
 los:
   prefix: "TRB"          # Unique per guide
@@ -208,30 +210,20 @@ A guide is **Bronze** when this schema is present and audit checks pass; see
 
 ## Adding a new audit script
 
-1. Drop the script in `shared/audits/audit_<name>.py` following the existing
+1. Drop the script in `tooling/audits/guide/audit_<name>.py` (per-guide) or
+   `tooling/audits/fleet/audit_<name>.py` (fleet), following the existing
    pattern (CLI: `--guide <slug>` for single, `--all` for fleet).
 2. Add a row to the table above.
-3. Add the script name to `shared/config/canonical_values.yaml`
+3. Add the script name to `config/canonical_values.yaml`
    (`audit_scripts` key).
 4. Wire into a Makefile QA target if it's per-guide.
 5. Reference from `tier_model.md` if it gates a tier.
 
-## Hub vs local
-
-Validation scripts referenced by per-guide `guide_qa.yaml` paths point at
-`~/Claude/lever_of_archimedes/tools/guide_qa/validation/*.py` (the upstream
-hub). Local `shared/validation/` mirrors the hub. Sync via
-`scripts/sync_from_hub.sh`.
-
-The 4 newer audit scripts (`audit_atomicity`, `audit_card_presentation`,
-`audit_term_consistency`, `audit_content_freshness`) may not be in the hub
-yet; reconciliation with the hub is a deferred follow-up.
-
 ## Reference
 
-- All audits: `ls shared/audits/audit_*.py`
-- All validations: `ls shared/validation/`
-- Sync script: `scripts/sync_from_hub.sh`
-- Fleet audit: `scripts/audit_all_courses.py`
-- Machine-readable list: `shared/config/canonical_values.yaml`
+- All fleet audits: `ls tooling/audits/fleet/audit_*.py`
+  (the per-guide `tooling/audits/guide/` suite lands with roadmap T1)
+- All validations: `ls tooling/validation/`
+- Fleet audit: `make audit-all` (`tooling.audits.fleet.audit_all_courses`)
+- Machine-readable list: `config/canonical_values.yaml`
   (`audit_scripts` key)

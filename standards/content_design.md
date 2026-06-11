@@ -47,8 +47,8 @@ in authored chapters.
 `\marginwarning[Warning]{text}` — that was a typo in the old
 `content-quality.md`, corrected 2026-04-19).
 
-Canonical macro source: per-guide `notes/notebook/notebook-extensions.sty`.
-Machine-readable mirror: `shared/config/canonical_values.yaml`
+Canonical macro source: per-guide `guide/notebook-extensions.sty`.
+Machine-readable mirror: `config/canonical_values.yaml`
 (`margin_categories` key).
 
 ### Quality rules
@@ -304,9 +304,10 @@ as of its date stamp.
 
 ## Reference
 
-- Convenience macros: per-guide `notes/notebook/notebook-extensions.sty`.
-- Machine-readable enums: `shared/config/canonical_values.yaml`.
-- Problem/vignette/drill macros: `shared/latex/los-macros.sty`. See
+- Convenience macros: per-guide `guide/notebook-extensions.sty`.
+- Machine-readable enums: `config/canonical_values.yaml`.
+- Problem/vignette/drill macros: `tooling/latex/los-macros.sty`. See
   [`macro_catalog.md`](macro_catalog.md).
 - Quality metrics and targets: [`quality_targets.md`](quality_targets.md).
-- Anti-pattern detector: `shared/audits/audit_margin_quality.py`.
+- Anti-pattern detector: the `audit_margin_quality` audit (see
+  [`audit_catalog.md`](audit_catalog.md)).

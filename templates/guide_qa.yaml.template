@@ -8,7 +8,7 @@ guide:
   chapters_glob: "{{GUIDE_DIR}}/chapters/*.tex"
   appendices_glob: "{{GUIDE_DIR}}/appendices/*.tex"
   cards_dir: "{{GUIDE_DIR}}/cards"
-  review_dir: "docs/review"
+  review_dir: "review"
   build_cmd: "make -C {{GUIDE_DIR}} pilot"
   full_build_cmd: "make -C {{GUIDE_DIR}} digital"
 
@@ -67,14 +67,13 @@ readiness_checks:
     threshold: 5
 
 # Gold tier exceptions (uncomment + populate as applicable).
-# Surfaced 2026-04-24 per reports/tier_spec_effectiveness_audit_20260424.md
-# remediation item 3. See docs/standards/00_universal/tier_model.md for the
-# Gold gate definitions these waive.
+# See tooling/standards/tier_model.md §Gold for the gate definitions these
+# waive (G3 decks, G6 dashboard RED, G7 F-appendix).
 #
 # gold_exceptions:
 #   # Set to "true" if the guide intentionally ships only a complete deck
-#   # (e.g., a 2-chapter DLAI short course where per-chapter decks add no
-#   # pedagogical value). The auditor (scripts/audit_gold.py G3) honors this
+#   # (e.g., a small 2-chapter guide where per-chapter decks add no
+#   # pedagogical value). The Gold runner (G3; roadmap T2) honors this
 #   # waiver only when paired with a non-empty justification.
 #   decks_complete_only: "false"
 #   justification: ""

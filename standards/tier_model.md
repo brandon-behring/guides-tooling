@@ -1,124 +1,91 @@
 # Tier Model
 
 Three-tier readiness model for course-learning guides. Replaces the
-binary "gold-standard or not" framing in the previous Manning gold spec.
+binary "gold-standard or not" framing of the original single-spec era.
 
 ## Tiers
 
 ### Bronze — passes the structural baseline
 
-A guide is Bronze when `python3 scripts/audit_all_courses.py --summary`
-shows it at **9/9 GREEN** on the 9-point structural checklist:
+A guide is Bronze when `make audit-all` (i.e.
+`python -m tooling.audits.fleet.audit_all_courses --summary`) shows it at
+**9/9 GREEN** on the 9-point structural checklist:
 
 1. `guide_qa.yaml` present and valid.
-2. Validation symlinks at `scripts/validation/{check_refs,check_duplicates,extract_los,check_latex_warnings}.py`.
+2. Validation modules resolvable via `tooling.validation.{check_refs,check_duplicates,extract_los,check_latex_warnings}`.
 3. Makefile QA targets (`qa`, `qa-build`, `qa-refs`, `qa-los`, `qa-cards`, `qa-presentation`).
-4. `notebook-extensions.sty` present.
+4. `notebook-extensions.sty` present (at `guide/notebook-extensions.sty`).
 5. Cards extracted (at least one `cards/*.yml`).
 6. Anki deck (`decks/*.apkg`) present or explicitly documented as absent.
-7. `docs/review/dashboard.md` present.
+7. `review/dashboard.md` present.
 8. Bloom's levels in `guide_qa.yaml.los.valid_levels` match the canonical 10
    in [`learning_outcomes.md`](learning_outcomes.md) (or are a documented subset).
-9. No hardcoded paths in audit scripts or Makefile (use the validation
-   symlinks).
+9. No hardcoded paths in audit scripts or Makefile (resolve via the
+   `tooling.*` package).
 
-Today (2026-04-21): **118 / 118** active guides are Bronze 9/9
-(was 115/118 on 2026-04-19; the gap was closed by a fleet-wide
-`make decks` run after patching 38 Makefiles that lacked the
-`decks:` target).
+Live as of 2026-06-09: **81 / 81** active guides (across 12 topics; 45
+published, 36 MEAP) are Bronze 9/9.
 
 ### Silver — verified and contextualized
 
 Bronze plus:
 
-- **Source manifest** scaffolded and verified (`docs/review/source_manifest.md`).
-  Today provisional — `scripts/scaffold_source_manifest.py` is a deferred
-  follow-up. Until it lands, an existing manifest counts; absence does not
-  block Silver retroactively (this is a forward-looking gate).
+- **Source manifest** scaffolded and verified (`review/source_manifest.md`).
+  An existing manifest counts; absence does not block Silver retroactively
+  (this is a forward-looking gate).
 - **Real Appendix D** — at least 5 conceptual questions with expected-answer
   points, role/level deltas (IC4 vs IC5+/Staff), cross-references to
   chapters via LOS IDs, and — for any guide on the
   [`system_design_allowlist.yaml`](system_design_allowlist.yaml) — at least
   one system/design scenario section. A stub Appendix D fails Silver. See
   [`interview_standard.md`](interview_standard.md).
-- **Real `notes/interview_connections.md`** — not a stub. Maps to specific
+- **Real `review/interview_connections.md`** — not a stub. Maps to specific
   interview questions or contexts. The auditor blocks:
   - any bracketed scaffold placeholder (`[Fill after…]`,
     `[See deep-research…]`, `[Fill in during…]`, `[TBV…]`, `[TBD]`);
   - any canonical IC.md section whose minimum substantive-word count is
-    below **30** (raised from 15 on 2026-04-22 after Phase A sweep
-    cleared all thin sections). A `IC_STUB_WORD_FLOOR = 15` tripwire
-    remains in the code as a hard-stub catch.
-  Exemplar: `manning_llm_from_scratch/notes/interview_connections.md`
+    below **30**. A `IC_STUB_WORD_FLOOR = 15` tripwire remains in the
+    code as a hard-stub catch.
+  Exemplar: `manning_llm_from_scratch/review/interview_connections.md`
   (4 mapped interview questions with cross-volume references).
 - **LOS / chapter refs in Appendix D** — at least one `\cref{ch:...}`,
   `\ref{ch:...}`, or per-guide LOS-prefix token (e.g., `RSP-4.1`) must
-  appear in `D_interview_prep.tex`. Promoted from advisory to gate on
-  2026-04-22; Phase A sweep confirmed 118/118 pass.
+  appear in `D_interview_prep.tex`.
 - **System-design section body length** — for guides on the
   [`system_design_allowlist.yaml`](system_design_allowlist.yaml), the
-  system-design scenario section body must be **≥50 substantive words**
-  (hardened from presence-only regex on 2026-04-22). Extraction is
-  sibling-level aware: subsections under a `\section{System Design:
-  ...}` count toward the body.
-- **Non-stub dashboard** — `docs/review/dashboard.md` shows real metrics, not
+  system-design scenario section body must be **≥50 substantive words**.
+  Extraction is sibling-level aware: subsections under a
+  `\section{System Design: ...}` count toward the body.
+- **Non-stub dashboard** — `review/dashboard.md` shows real metrics, not
   "Run make qa-health after content is authored."
 
-Today (2026-04-24, post-remediation per
-`reports/tier_spec_effectiveness_audit_20260424.md` item 7):
-**66 / 118** Silver PASS. The drop from 118/118 (2026-04-22) reflects
-tightening the role-delta gate per audit memo item 7: a single
-`\companytags{Mid-level}` line no longer counts as role-delta evidence;
-the gate now requires either ≥2 distinct level tokens (e.g.,
-`IC4` AND `Senior` in the same Appendix D) OR an explicit
-`Role / Level Mapping` section header. 52 guides previously passed via
-the loose 18-pattern OR-list and now need either richer level
-markers or the section header; tracked as a follow-up sweep. The 4
-non-role-delta gates are unchanged from the 2026-04-22 hardening.
-Remediation timeline:
+Live as of 2026-06-09: **81 / 81** Silver PASS. The role-delta gate
+requires either ≥2 distinct level tokens (e.g., `IC4` AND `Senior` in the
+same Appendix D) OR an explicit `Role / Level Mapping` section header; a
+single `\companytags{Mid-level}` line does not count as role-delta evidence.
 
-1. (2026-04-21) Hardened `audit_silver.py`: stub-placeholder
-   regex + 15-word minimum per canonical IC.md section +
-   allowlist-gated system-design presence.
-2. (2026-04-21) Wrote
-   [`system_design_allowlist.yaml`](system_design_allowlist.yaml) to
-   encode the "where applicable" boundary.
-3. (2026-04-21) Authored real IC.md content for 20 DLAI guides against
-   the `manning_llm_from_scratch` exemplar.
-4. (2026-04-21) Added two-scenario system-design sections to 28
-   allowlist guides that had been missing them.
-5. (2026-04-22 Phase A) Added chapter `\cref{ch:...}` refs to 8 guides'
-   Appendix D (LOS-refs == 0 → 0 guides). Thickened the thinnest IC.md
-   section on 29 guides so all 4 canonical sections are ≥30 words.
-6. (2026-04-22 Phase B) Promoted IC_MIN_SECTION_WORDS from 15 to 30,
-   promoted LOS-ref count to a hard gate (≥1 required), promoted
-   system-design presence from title-regex-only to body-length check
-   (≥50 words; sibling-level-aware extraction).
-
-Audited by `scripts/audit_silver.py`, which is the authoritative
-Silver roster. `scripts/audit_silver_fleet.py` remains as a fast
+Audited by `tooling.audits.fleet.audit_silver`, which is the authoritative
+Silver roster. `tooling.audits.fleet.audit_silver_fleet` remains as a fast
 heuristic calibration signal but should not be quoted as the roster.
-`scripts/audit_all_courses.py` agrees with the authoritative auditor
-(its `check_silver` requires Bronze 9/9 and delegates the four content
-gates to it).
+`tooling.audits.fleet.audit_all_courses` agrees with the authoritative
+auditor (its `check_silver` requires Bronze 9/9 and delegates the four
+content gates to it).
 
-**Informational columns** surfaced by `audit_silver.py` beyond
-the four Silver gates --- none are hard gates, to avoid false-failing
+**Informational columns** surfaced by `tooling.audits.fleet.audit_silver`
+beyond the four Silver gates --- none are hard gates, to avoid false-failing
 guides with legitimate stylistic variation:
 
 - `LOS` --- count of `\cref{ch:*}` / `\ref{ch:*}` / LOS-prefix refs in
-  Appendix D. 20 guides have 0 refs (mostly short-DLAI depth-ladder
-  format); use as a per-guide spot-check, not a gate.
+  Appendix D; use as a per-guide spot-check, not a gate.
 - `ICmn` --- minimum substantive-word count across the 4 canonical
-  IC.md sections. Surfaces stub sections (the `dlai_ragas_docs`
-  defect pattern) without blocking legitimate short-template sections.
+  IC.md sections. Surfaces stub sections without blocking legitimate
+  short-template sections.
 - `SysD` --- whether Appendix D has a system-design scenario section
-  per §9. 63 guides lack one; the "where applicable" allowlist
-  deserves a dedicated design pass.
+  per §9; the "where applicable" allowlist deserves a dedicated design pass.
 - `--dashboard-debt` flag ranks guides by RED/YELLOW status markers
-  in `docs/review/dashboard.md`; 77 guides carry 3+ RED, mostly from
-  mis-calibrated glossary / bibliography / page-count targets on
-  tutorial-genre guides. Defer to post-Silver polish.
+  in `review/dashboard.md`, mostly from mis-calibrated glossary /
+  bibliography / page-count targets on tutorial-genre guides. Defer to
+  post-Silver polish.
 
 ### Gold — interview-ready, cross-referenced, audit-clean, current
 
@@ -258,7 +225,7 @@ nearly all).
 - **No-code books**: Manning books explicitly marked no-code in
   `manning_catalog.yaml` (`has_code: false`) and in the source manifest do
   NOT need companion-code evidence. They may still be Gold.
-- **Short DLAI courses** (<3 hours of source material): may scale LOS and
+- **Short-source guides** (<3 hours of source material): may scale LOS and
   chapter targets to 4-6 / 3-5 respectively when documented in their source
   manifest. Still eligible for Gold at the calibrated targets.
 - **Unavailable source materials**: figures/tables/listings that cannot be
@@ -328,47 +295,42 @@ guide's chapters. Not a 1-line "define X"; a genuine question.>
 <Same structure.>
 ```
 
-**Enforcement**: `scripts/audit_silver.py` detects the
+**Enforcement**: `tooling.audits.fleet.audit_silver` detects the
 `Out-of-Interview-Scope Waiver` heading and marks the guide's App-D
 gate as PASS with a `waiver` classification in the report. The 2
 interviewcontext blocks + role-delta tokens (≥2 distinct OR an
 explicit `Role / Level Mapping` header per the tightened gate) are
 still required so the file isn't empty.
 
-**Special case — aggregator waiver**: a guide that is a meta-guide
-with no chapters of its own (e.g.,
-`deeplearning_ai_pytorch_professional_certificate` aggregating 6
-specializations) uses the same waiver shape, but the scope-note
-rationale cites "this guide aggregates N sub-courses; interview prep
-for the constituent specializations is carried by those guides."
-The 2 questions are "bridge" questions (when to use the tech stack,
-career-fit, how sub-courses compose).
+**Special case — aggregator waiver**: a meta-guide with no chapters of
+its own (one that aggregates several sub-courses) uses the same waiver
+shape, but the scope-note rationale cites "this guide aggregates N
+sub-courses; interview prep for the constituent specializations is
+carried by those guides." The 2 questions are "bridge" questions (when
+to use the tech stack, career-fit, how sub-courses compose).
 
 ## Non-guide artifacts (outside the tier model)
 
-Some directories under the course-learning repo root are NOT course
-guides and are therefore out of scope for Bronze/Silver/Gold tier
-evaluation. They are excluded from `scripts/audit_all_courses.py`,
-`scripts/audit_silver_fleet.py`, and
-`scripts/audit_silver.py` via `EXCLUDE_DIRS`.
-
-- `manning_curriculum` — a LaTeX document enumerating the Manning
-  curriculum and its sequencing; not a guide itself. Has its own
-  Makefile and compiles to a standalone PDF.
-- `manning_sutskevers_list` — a reading list of canonical papers;
-  no chapter structure, no `guide_qa.yaml`.
+Some directories under the repo root are NOT course guides (curriculum
+or reading-list documents, infrastructure dirs) and are therefore out of
+scope for Bronze/Silver/Gold tier evaluation. The fleet auditors
+(`tooling.audits.fleet.audit_all_courses`,
+`tooling.audits.fleet.audit_silver_fleet`,
+`tooling.audits.fleet.audit_silver`) skip them via `EXCLUDE_DIRS`.
 
 A directory becomes a tier-tracked guide the moment it gains a
-`guide_qa.yaml`. Adding one of these dirs to `EXCLUDE_DIRS`
-prevents accidental inclusion if a `guide_qa.yaml` is ever placed
-there, which is a defensive measure — the primary filter is the
-presence of `guide_qa.yaml` itself.
+`guide_qa.yaml`. Adding a non-guide dir to `EXCLUDE_DIRS` is a
+defensive measure that prevents accidental inclusion if a `guide_qa.yaml`
+is ever placed there — the primary filter is the presence of
+`guide_qa.yaml` itself.
 
-## How tiers interact with families
+## How thresholds interact with tiers
 
-Tiers are universal. Per-family overlays calibrate the *thresholds* (e.g.,
-LOS counts) but not the *gates* (which audits must pass). Every Gold guide
-passes all 11 audits (see §Gold G2); families differ only in scale targets.
+Tiers are universal: the same gates apply to every guide. What varies per guide
+is the *thresholds* (LOS counts, glossary/bibliography size, page-count targets),
+calibrated per guide and topic genre in `guide_qa.yaml` — never the *gates*
+(which audits must pass). Every Gold guide passes all 11 audits (see §Gold G2);
+guides differ only in scale targets.
 
 ## Promotion sequencing
 
