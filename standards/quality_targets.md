@@ -1,15 +1,15 @@
 # Quality Targets
 
-Single canonical metric table. Consolidates and supersedes the Manning gold
-spec §7 table and the `.claude/rules/content-quality.md` Quality Metrics
-table. Per-guide overrides live in `guide_qa.yaml.metrics`.
+Single canonical metric table. Consolidates and supersedes the gold spec §7
+table and the `.claude/rules/content-quality.md` Quality Metrics table.
+Per-guide overrides live in `guide_qa.yaml.metrics`.
 
 ## Universal targets
 
 | Dimension | Universal target | Red flag | Notes |
 |-----------|-----------------|----------|-------|
-| LOS per chapter (normal) | 6-8 | 0 or >12 | Family overlays may calibrate (DLAI 4-6) |
-| Total LOS per guide | calibrated per guide | — | Manning 60-90, DLAI 20-50, Coursera 100-150 |
+| LOS per chapter (normal) | 6-8 | 0 or >12 | Shorter sources may calibrate down (4-6) |
+| Total LOS per guide | calibrated per guide | — | 60-90 typical book, 20-50 short course, 100-150 multi-part |
 | Retrieval coverage | 100% of defined LOS | <90% | `audit_retrieval_coverage.py` |
 | Margin density (per chapter) | content-driven floor, not a cap (theory 8-14+, framework 14-22+, code-heavy 5-10+) | 0, or 30+ theory / 20+ code-heavy | `audit_margin_quality.py` |
 | Margin density (per section) | 2-3 typical; **no substantive section left bare** | 5+ | `audit_margin_quality.py` |
@@ -34,25 +34,26 @@ table. Per-guide overrides live in `guide_qa.yaml.metrics`.
 | ID collisions | 0 | `extract_cards.py` `seen_ids` |
 | Solution completeness | 100% for problem and vignette cards | `audit_solution_quality.py` |
 
-## Per-family calibration
+## Per-source calibration
 
-Family overlays may calibrate the *thresholds* (not the *gates*). For
-example:
+A guide may calibrate the *thresholds* (not the *gates*) to its source shape.
+The fleet is all-Manning (81 guides: 45 published, 36 MEAP), so the variation
+is driven by source length, not by a course family. For example:
 
-- **Manning**: page count 150-200, total LOS 60-90.
-- **DLAI short course**: page count 60-100, LOS per chapter 4-6, total LOS
-  20-50.
-- **Coursera multi-course**: page count 300-400, total LOS 100-150.
-- **Other** (`99_other/`): per the guide's source manifest; no fixed default.
+- **Typical book**: page count 150-200, total LOS 60-90.
+- **Short course / short book**: page count 60-100, LOS per chapter 4-6,
+  total LOS 20-50.
+- **Multi-part / extended**: page count 300-400, total LOS 100-150.
+- **Atypical source**: per the guide's source manifest; no fixed default.
 
-Calibration is set in `guide_qa.yaml.metrics`, not in the family overlay
-text. Overlays document the *shape* of the calibration, not the exact
-numbers.
+Calibration is set in `guide_qa.yaml.metrics`. The source manifest documents
+the *shape* of the calibration, not the exact numbers.
 
 ## How to read a per-guide dashboard
 
-`docs/review/dashboard.md` per guide shows traffic-light status against the
-guide's `guide_qa.yaml.metrics` thresholds.
+The per-guide `review/dashboard.md` (gitignored, rebuilt by `make dashboards`)
+shows traffic-light status against the guide's `guide_qa.yaml.metrics`
+thresholds.
 
 - **GREEN**: at or above target.
 - **YELLOW**: between yellow and target (if `inverted: false`) or between
@@ -79,8 +80,9 @@ meaningless.
 ## Reference
 
 - Per-guide config: each `guide_qa.yaml`.
-- Template: `shared/templates/guide_qa.yaml.template`.
+- Template: `tooling/templates/guide_qa.yaml.template`.
 - Audit scripts: [`audit_catalog.md`](audit_catalog.md).
-- Worked examples: `manning_rlhf_book/guide_qa.yaml` (full),
-  `manning_llm_from_scratch/guide_qa.yaml` (with optional supplement
-  coverage).
+- Worked examples:
+  `evaluation-alignment-safety/manning_rlhf_book/guide_qa.yaml` (full),
+  `llms-and-transformers/manning_llm_from_scratch/guide_qa.yaml` (with
+  optional supplement coverage).

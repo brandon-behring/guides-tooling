@@ -1,11 +1,11 @@
 # Macro Catalog
 
 Reference list of LaTeX macros available to chapter authors. Defined in
-`shared/latex/los-macros.sty` (universal, 942 lines) and per-guide
-`notes/notebook/notebook-extensions.sty` (guide-specific extensions).
+`tooling/latex/los-macros.sty` (universal, 942 lines) and per-guide
+`guide/notebook-extensions.sty` (guide-specific extensions).
 
 This catalog is hand-curated and may lag the source; when in doubt, grep
-`shared/latex/los-macros.sty` for the authoritative signatures.
+`tooling/latex/los-macros.sty` for the authoritative signatures.
 
 ## Chapter headers
 
@@ -102,22 +102,22 @@ retired 2026-04-19).
 
 ## Per-guide extensions
 
-Each guide's `notes/notebook/notebook-extensions.sty` may define guide-local
+Each guide's `guide/notebook-extensions.sty` may define guide-local
 macros. These are not fleet-wide and should not be assumed portable. If ≥3
 guides share an extension, consider promoting it to
-`shared/latex/los-macros.sty` (discussed in the remediation plan).
+`tooling/latex/los-macros.sty` (discussed in the remediation plan).
 
 ## Reference
 
-- Universal macros: `shared/latex/los-macros.sty` (942 lines).
-- Per-guide extensions: each guide's `notes/notebook/notebook-extensions.sty`.
-- Card extractor (reads these macros): `shared/cards/extract_cards.py`.
-- Machine-readable margin category list: `shared/config/canonical_values.yaml`.
+- Universal macros: `tooling/latex/los-macros.sty` (942 lines).
+- Per-guide extensions: each guide's `guide/notebook-extensions.sty`.
+- Card extractor (reads these macros): `tooling.cards.extract_cards`.
+- Machine-readable margin category list: `tooling/config/canonical_values.yaml`.
 
 ## Known overfitting risk
 
-The canonical macro list above was verified against `shared/latex/` and
-`manning_rlhf_book/notes/notebook/notebook-extensions.sty` during the
+The canonical macro list above was verified against `tooling/latex/` and
+`manning_rlhf_book/guide/notebook-extensions.sty` during the
 2026-04-19 consolidation. A fleet-wide scan of every guide's
 `notebook-extensions.sty` to classify macros as
 **fleet-shared / family / guide-local / deprecated** is a deferred

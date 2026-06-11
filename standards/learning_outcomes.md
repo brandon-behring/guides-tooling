@@ -2,7 +2,7 @@
 
 Canonical taxonomy of cognitive levels used in `\los{ID}{level}{statement}`
 across all guides. Single source of truth (machine-readable mirror at
-`shared/config/canonical_values.yaml`).
+`tooling/config/canonical_values.yaml`).
 
 ## The 10 cognitive levels
 
@@ -25,16 +25,17 @@ should not invent new levels — that breaks fleet audits.
 
 ## Per-chapter targets
 
-| Family | LOS per chapter (universal) | Calibration in overlay |
-|--------|----------------------------|------------------------|
-| Manning | 6-8 | as-is |
-| DLAI short course | 4-6 | calibrated down (shorter courses) |
-| Coursera multi-course | 6-8 | as-is |
-| Other | 6-8 | per `99_other/overlay.md` |
+| Source shape | LOS per chapter (universal) | Calibration |
+|--------------|----------------------------|-------------|
+| Book / long course | 6-8 | as-is |
+| Short course | 4-6 | calibrated down (shorter courses) |
+| Multi-part / extended | 6-8 | as-is |
 
-Total LOS per guide is set in `guide_qa.yaml.metrics.los_count.target`. Common
-ranges: Manning 60-90, DLAI 20-50, Coursera 100-150. See
-[`quality_targets.md`](quality_targets.md) for the full table.
+The fleet is all-Manning (81 guides: 45 published, 36 MEAP), but the
+universal LOS-per-chapter band still varies by source length. Total LOS per
+guide is set in `guide_qa.yaml.metrics.los_count.target`. Common ranges:
+60-90 for a typical book; 20-50 for a short course; 100-150 for a multi-part
+course. See [`quality_targets.md`](quality_targets.md) for the full table.
 
 ## LOS macro signature
 
@@ -46,20 +47,22 @@ ranges: Manning 60-90, DLAI 20-50, Coursera 100-150. See
   (e.g., `TRB-3.2` for Manning RLHF Book chapter 3 LOS 2). Must be unique
   per guide.
 - `level`: one of the 10 above. Validated by
-  `shared/validation/extract_los.py --validate`.
+  `python3 -m tooling.validation.extract_los --validate`.
 - `Statement`: action verb (matching the level) + object + condition. Avoid
   "understand" / "know" — prefer the explicit cognitive verbs above.
 
-The macro lives in `shared/latex/los-macros.sty` (originally line 45 had a
+The macro lives in `tooling/latex/los-macros.sty` (originally line 45 had a
 comment listing only 7 levels; updated 2026-04-19 to enumerate all 10).
 
 ## LOS-to-card traceability
 
 Every chapter must include enough retrieval opportunities (problem, vignette,
 drill, checkpoint, interview cards) to test every defined LOS. The
-`audit_retrieval_coverage.py` script measures this; 100% is the target.
-Authors link cards to LOS via the optional `[LOS-ID]` parameter on most card
-macros — see [`card_standards.md`](card_standards.md).
+`audit_retrieval_coverage.py` per-guide audit measures this; 100% is the
+target. (That audit ports to `tooling.audits.guide.*` in roadmap T1; see
+[`audit_catalog.md`](audit_catalog.md).) Authors link cards to LOS via the
+optional `[LOS-ID]` parameter on most card macros — see
+[`card_standards.md`](card_standards.md).
 
 ## When to restrict the valid set
 
@@ -81,11 +84,11 @@ Restricting is fine. Inventing new levels is not.
 
 ## Reference
 
-- Macro: `shared/latex/los-macros.sty` (line 45 comment lists all 10 as of
+- Macro: `tooling/latex/los-macros.sty` (line 45 comment lists all 10 as of
   2026-04-19).
-- Validation: `shared/validation/extract_los.py --validate`.
+- Validation: `python3 -m tooling.validation.extract_los --validate`.
 - Per-guide config: `guide_qa.yaml.los.{prefix,valid_levels}`.
-- Machine-readable: `shared/config/canonical_values.yaml` (`bloom_levels` key).
+- Machine-readable: `tooling/config/canonical_values.yaml` (`bloom_levels` key).
 - Bloom mapping authority: this file is the canonical mapping; if you need
   the full Bloom's taxonomy, consult an external source — this repo only
   cares about the 10 verbs above.

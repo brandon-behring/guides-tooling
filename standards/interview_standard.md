@@ -1,6 +1,6 @@
 # Interview Standard
 
-Cross-family contract for interview preparation content. Required at
+Fleet-wide contract for interview preparation content. Required at
 chapter, appendix, and guide-level.
 
 ## Chapter-level requirements
@@ -48,7 +48,7 @@ Examples:
 - A docker book → infra interview signals; design questions about
   containerization tradeoffs.
 
-### `notes/interview_connections.md`
+### `review/interview_connections.md`
 
 Required for every guide. **A stub file fails Silver tier.**
 
@@ -70,7 +70,7 @@ Format (loose; the exemplar is below):
 [How this guide closes a portfolio or interview-prep gap]
 ```
 
-**Exemplar**: `manning_llm_from_scratch/notes/interview_connections.md` —
+**Exemplar**: `llms-and-transformers/manning_llm_from_scratch/review/interview_connections.md` —
 4 mapped interview questions (Q5/Q6/Q8/Q12) with detailed connections to
 companion volumes and talking points.
 
@@ -79,19 +79,19 @@ companion volumes and talking points.
   help anyone preparing.
 - Empty section bodies under populated headers.
 
-## Family-specific interview-prep cost
+## Interview-prep authoring cost
 
-Different families pay different costs to write Appendix D and
-`interview_connections.md`:
+The fleet is all-Manning, but books vary in how much interview material is
+extractable, which drives Appendix D and `interview_connections.md` cost:
 
-| Family | Source for interview material | Authoring cost |
-|--------|-------------------------------|----------------|
-| Manning | Often extractable from book content (some books have explicit Q&A appendices); supplement books may carry drills | Lower (extract + polish) |
-| DLAI | Synthesized from course; instructor-provided material is rare scaffolding | Medium (synthesize from transcripts + lab walkthroughs) |
-| Coursera multi-course | **Mandatory authoring** — no textbook to extract from | High (must author from specialization breadth) |
+| Source shape | Source for interview material | Authoring cost |
+|--------------|-------------------------------|----------------|
+| Book with explicit Q&A / test-yourself content | Often extractable from book content (some books have explicit Q&A appendices); supplement books may carry drills | Lower (extract + polish) |
+| Book without dedicated interview material | Synthesized from chapter content | Medium (synthesize from prose + worked examples) |
+| Broad-survey / multi-topic book | **Mostly authored** — little ready-made Q&A to extract | High (must author across the book's breadth) |
 
-Coursera guides therefore have the highest Appendix-D authoring cost relative
-to source size; budget accordingly. See `30_coursera/overlay.md`.
+Broad-survey guides therefore have the highest Appendix-D authoring cost
+relative to source size; budget accordingly.
 
 ## What "interview-ready" means at each tier
 
@@ -107,8 +107,7 @@ to source size; budget accordingly. See `30_coursera/overlay.md`.
 ## Cross-reference
 
 For cross-guide interview-prep coordination (which guide owns which
-interview competency), see [`cross_references.md`](cross_references.md) and
-`docs/architecture.md`.
+interview competency), see [`cross_references.md`](cross_references.md).
 
 For role/level vocabulary used in margin notes, follow
 [`content_design.md`](content_design.md) per-category craft for `[Interview]`
