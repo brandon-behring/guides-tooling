@@ -117,7 +117,7 @@ guides share an extension, consider promoting it to
 ## Known overfitting risk
 
 The canonical macro list above was verified against `tooling/latex/` and
-`manning_rlhf_book/guide/notebook-extensions.sty` during the
+`evaluation-alignment-safety/manning_rlhf_book/guide/notebook-extensions.sty` during the
 2026-04-19 consolidation. A fleet-wide scan of every guide's
 `notebook-extensions.sty` to classify macros as
 **fleet-shared / family / guide-local / deprecated** is a deferred

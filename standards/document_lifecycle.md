@@ -28,7 +28,7 @@ Location: `tooling/standards/` (the flat standards tree).
 
 - Edited by humans.
 - No expiry.
-- Version bumps recorded in `tooling/standards/CHANGELOG.md`.
+- Version bumps recorded in the git log / PR commit messages (no standalone CHANGELOG).
 
 ### 2. Auto-generated artifacts
 
@@ -69,7 +69,7 @@ Location: per-workspace.
   standards.
 - Universal craft rules and tier definitions live in `tooling/standards/`, not
   in per-guide `CLAUDE.md`.
-- Template: `tooling/standards/templates/CLAUDE.guide.md.template`.
+- Scaffolded by the `new-course-guide` command (no standalone template file yet).
 - Migration: examples landed in the standards-consolidation PR
   (`manning_rlhf_book` and peers); remaining files are tracked by the
   remediation plan.

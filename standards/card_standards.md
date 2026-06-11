@@ -334,7 +334,7 @@ anki:
     # ... one entry per module
 ```
 
-Worked example: `manning_rlhf_book/guide_qa.yaml`.
+Worked example: `evaluation-alignment-safety/manning_rlhf_book/guide_qa.yaml`.
 
 Large guides should produce per-chapter `.apkg` decks plus a complete deck.
 Small guides may produce only a complete deck if documented in
@@ -390,15 +390,10 @@ Per-type structural requirements (HIGH-severity audit findings):
 front-back-duplicate checks (the answer lives in the front via
 `{{c1::...}}` markers).
 
-Run the audit per guide:
-```bash
-make -C <guide>/guide audit-back-content
-```
-
-Or fleet-wide:
-```bash
-make audit-all
-```
+The `audit_back_content` per-guide audit ports into `tooling.audits.guide.*` in
+roadmap T1; the Gold runner gates on it (CRITICAL+HIGH=0) in T2. Until those land it
+is **not** wired into a `make` target here — run the legacy `audit_back_content.py`
+from the `course_learning` repo.
 
 Baseline thresholds (per guide, regression-checked):
 each guide's `card_quality_baseline.json` — `back_content` section.

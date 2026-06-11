@@ -13,8 +13,8 @@ are listed in column 3 ("see also"), the column-2 file is authoritative.
 | What are the 6 margin categories? | [`content_design.md`](content_design.md) | `tooling/config/canonical_values.yaml` |
 | What card types exist? | [`card_standards.md`](card_standards.md) | `tooling.cards.extract_cards` (the actual extractor) |
 | How are card IDs formatted? | [`card_standards.md`](card_standards.md) §Card ID convention | `tooling.cards.extract_cards` (`seen_ids`) |
-| What's the Anki deck schema? | [`card_standards.md`](card_standards.md) §Anki schema | `manning_rlhf_book/guide_qa.yaml` (worked example) |
-| What macros can I use in chapter `.tex`? | [`macro_catalog.md`](macro_catalog.md) | `tooling/latex/los-macros.sty`; per-guide `course-extensions.sty` |
+| What's the Anki deck schema? | [`card_standards.md`](card_standards.md) §Anki schema | `evaluation-alignment-safety/manning_rlhf_book/guide_qa.yaml` (worked example) |
+| What macros can I use in chapter `.tex`? | [`macro_catalog.md`](macro_catalog.md) | `tooling/latex/los-macros.sty`; per-guide `guide/notebook-extensions.sty` |
 | How dense should margin notes be? | [`content_design.md`](content_design.md) §Density | — |
 | What should a problem card's solution include? | [`content_design.md`](content_design.md) §Problems and [`card_standards.md`](card_standards.md) | — |
 | How do I scaffold a new guide? | [`.claude/commands/new-course-guide.md`](../../.claude/commands/new-course-guide.md) | the host repo `CLAUDE.md` |
@@ -29,7 +29,7 @@ are listed in column 3 ("see also"), the column-2 file is authoritative.
 | How are stale fleet audit reports handled? | [`document_lifecycle.md`](document_lifecycle.md) §Auto-generated artifacts | — |
 | Where do I track forward work? | [`ROADMAP.md`](../../ROADMAP.md) (repo root) | `reports/inventory_and_quality.md` for the live snapshot |
 | Where's the cross-guide learning graph? | [`cross_references.md`](cross_references.md) (the *standard* + policy) | per-guide `\crossrefmargin{}` notes are the graph edges themselves |
-| What's the role-aligned interview prep contract? | [`interview_standard.md`](interview_standard.md) | `manning_llm_from_scratch/review/interview_connections.md` (exemplar) |
+| What's the role-aligned interview prep contract? | [`interview_standard.md`](interview_standard.md) | `llms-and-transformers/manning_llm_from_scratch/review/interview_connections.md` (exemplar) |
 | What targets does the dashboard report? | [`quality_targets.md`](quality_targets.md) | per-guide `guide_qa.yaml.metrics` |
 | Where do per-guide-specific instructions live? | The guide's own `CLAUDE.md` | `new-course-guide` scaffolds one per guide |
 | What's the per-guide `guide_qa.yaml` schema? | [`audit_catalog.md`](audit_catalog.md) §guide_qa.yaml schema | `tooling/templates/guide_qa.yaml.template` |

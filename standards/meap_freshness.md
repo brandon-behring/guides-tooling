@@ -73,7 +73,7 @@ MEAPs carry an explicit `vN`, but it is **not on the public product page** (whic
 Dashboard scan (`browser_evaluate` on `https://www.manning.com/dashboard`): for each
 `a[href*="/books/"]` card read `version:\s*(\d+)` and `last updated:\s*(\d{4}-\d\d-\d\d)` (keys are
 the **live** post-rename slugs). Then enrich detection with `--versions <file>` — the
-`make meap-freshness` target auto-uses the newest snapshot if present. A guide goes **STALE** when
+`make meap-freshness` target (the T4 deliverable) will auto-use the newest snapshot if present. A guide goes **STALE** when
 the upstream `vN` exceeds the manifest's `meap_version`, **or** when `last_updated` is newer than
 the guide's build date (manifest `extracted`, else built-PDF mtime). Coverage = whatever the
 dashboard recently-updated feed surfaces (i.e. the books that actually moved); everything else
@@ -97,7 +97,9 @@ prints the plan without mutating anything.
 
 ## Trigger & cadence
 
-- **Now (manual):** `make meap-freshness` on demand. Detection needs no auth, so it runs anywhere.
+- **Until T4 lands (manual):** run the legacy `check_manning_meap_freshness.py` from the
+  `course_learning` repo; `make meap-freshness` is the T4 target this spec defines, not yet wired
+  here. Detection needs no auth, so it runs anywhere.
 - **Promote to scheduled (one step):** wrap `make meap-freshness` in a `/schedule` monthly
   routine that opens Report B / pings on any non-`OK`/`BASELINE` row. Detection is auth-free so
   the **check** runs fine headless; only `--refresh` needs the authenticated browser/persistent
