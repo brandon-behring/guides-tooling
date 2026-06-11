@@ -31,7 +31,7 @@ from typing import Any, Optional
 
 import yaml
 
-from tooling.audits.guide._guide_scope import guide_dir_for_slug
+from tooling.audits.guide._guide_scope import get_repo_root, guide_dir_for_slug
 
 
 # ── Standard categories ──────────────────────────────────────────────────────
@@ -328,7 +328,9 @@ def audit_guide_margins(
     """Audit margin quality for a guide."""
     slug = guide_meta["slug"]
     gd = guide_dir_for_slug(slug)
-    chapters_dir = (gd / "guide" / "chapters") if gd else repo_root / slug / "guide" / "chapters"
+    if gd is None:
+        return None
+    chapters_dir = gd / "guide" / "chapters"
 
     if not chapters_dir.exists():
         return None
@@ -454,21 +456,14 @@ def main() -> None:
     if args.repo_root:
         repo_root = Path(args.repo_root)
     else:
-        cwd = Path.cwd()
-        for parent in [cwd] + list(cwd.parents):
-            if (parent / "guides.yml").exists():
-                repo_root = parent
-                break
-        else:
-            print("Error: guides.yml not found", file=sys.stderr)
-            sys.exit(1)
+        repo_root = get_repo_root()
 
     all_guides = load_guides_yml(repo_root)
 
+    # Default scans the whole fleet (see audit_content_quality); the Gold runner
+    # (T2) filters to Silver-PASS. --all kept as an explicit synonym.
     if args.guide:
         all_guides = [g for g in all_guides if g["slug"] == args.guide]
-    elif not args.all:
-        all_guides = [g for g in all_guides if g.get("tier", 1) == 1]
 
     results: list[GuideMarginMetrics] = []
     for meta in all_guides:

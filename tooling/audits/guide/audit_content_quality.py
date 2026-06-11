@@ -30,7 +30,7 @@ from typing import Any, Optional
 
 import yaml
 
-from tooling.audits.guide._guide_scope import guide_dir_for_slug
+from tooling.audits.guide._guide_scope import get_repo_root, guide_dir_for_slug
 
 
 # ── Quality profiles ─────────────────────────────────────────────────────────
@@ -266,7 +266,9 @@ def audit_guide(
     """Audit all chapters in a guide."""
     slug = guide_meta["slug"]
     gd = guide_dir_for_slug(slug)
-    chapters_dir = (gd / "guide" / "chapters") if gd else repo_root / slug / "guide" / "chapters"
+    if gd is None:
+        return None
+    chapters_dir = gd / "guide" / "chapters"
 
     if not chapters_dir.exists():
         return None
@@ -421,23 +423,15 @@ def main() -> None:
     if args.repo_root:
         repo_root = Path(args.repo_root)
     else:
-        # Walk up from cwd looking for guides.yml
-        cwd = Path.cwd()
-        for parent in [cwd] + list(cwd.parents):
-            if (parent / "guides.yml").exists():
-                repo_root = parent
-                break
-        else:
-            print("Error: guides.yml not found in cwd or parents", file=sys.stderr)
-            sys.exit(1)
+        repo_root = get_repo_root()
 
     all_guides = load_guides_yml(repo_root)
 
-    # Filter
+    # Filter. Default scans the whole fleet — under the all-Manning tier model a
+    # per-guide audit isn't restricted to tier 1; the Gold runner (T2) is what
+    # filters to Silver-PASS guides. --all is kept as an explicit synonym.
     if args.guide:
         all_guides = [g for g in all_guides if g["slug"] == args.guide]
-    elif not args.all:
-        all_guides = [g for g in all_guides if g.get("tier", 1) == 1]
 
     # Audit
     results: list[GuideMetrics] = []

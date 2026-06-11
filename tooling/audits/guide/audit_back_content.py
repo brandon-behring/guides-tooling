@@ -861,9 +861,15 @@ def audit_guide(guide: GuideInfo, repo_root: Path) -> GuideMetrics | None:
 # ── Output ───────────────────────────────────────────────────────────────────
 
 
-def write_per_guide_json(metrics: GuideMetrics, repo_root: Path) -> Path:
-    """Write per-guide JSON to <guide>/review/back_content_audit_<DATE>.json (layout-agnostic)."""
-    guide_dir = guide_dir_for_slug(metrics.slug) or (repo_root / metrics.slug)
+def write_per_guide_json(metrics: GuideMetrics, repo_root: Path) -> Path | None:
+    """Write per-guide JSON to <guide>/review/back_content_audit_<DATE>.json.
+
+    Returns None for a ghost slug (present in guides.yml but absent on disk)
+    rather than creating a stray flat ``<repo_root>/<slug>/review/`` directory.
+    """
+    guide_dir = guide_dir_for_slug(metrics.slug)
+    if guide_dir is None:
+        return None
     review_dir = guide_dir / "review"
     review_dir.mkdir(parents=True, exist_ok=True)
     date_str = datetime.now(tz=timezone.utc).strftime("%Y%m%d")

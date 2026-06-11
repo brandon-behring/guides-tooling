@@ -217,10 +217,11 @@ def get_velocity(guide) -> str:
                 vel = (data.get("gold") or {}).get("velocity")
             except Exception:
                 vel = None
-        if vel is None:
-            shelf = gd.parent.name
-            vel = "fast" if shelf in _FAST_SHELVES else "slow" if shelf in _SLOW_SHELVES else "medium"
-    return {"fast": "HIGH", "medium": "MEDIUM", "slow": "LOW"}.get(str(vel).lower(), "LOW")
+        shelf = gd.parent.name
+        shelf_default = "fast" if shelf in _FAST_SHELVES else "slow" if shelf in _SLOW_SHELVES else "medium"
+        if str(vel).lower() not in {"fast", "medium", "slow"}:
+            vel = shelf_default  # missing or unrecognized gold.velocity → shelf default
+    return {"fast": "HIGH", "medium": "MEDIUM", "slow": "LOW"}.get(str(vel).lower(), "MEDIUM")
 
 
 def scan_file(tex_path: Path, guide_slug: str) -> list[Finding]:
@@ -265,7 +266,7 @@ def audit_guide_freshness(guide: GuideInfo, repo_root: Path) -> Optional[GuideFr
     metrics = GuideFreshness(slug=guide.slug, velocity=get_velocity(guide))
 
     # Scan chapters/ and appendices/
-    notebook_dir = chapters_dir.parent  # notes/notebook/
+    notebook_dir = chapters_dir.parent  # <slug>/guide/
     for tex_dir in [chapters_dir, notebook_dir / "appendices"]:
         if not tex_dir.exists():
             continue
