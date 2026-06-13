@@ -38,9 +38,11 @@ decks:
 	$(PY) -m tooling.anki.yaml_to_apkg cards/all_cards.yml -o decks/ --config ../guide_qa.yaml
 
 # ── Fleet (run from the <host> repo root) ────────────────────────────────────
-.PHONY: audit-all audit-manifests runon dashboards decks-all fix-qa-cmds
+.PHONY: audit-all audit-manifests audit-gold runon dashboards decks-all fix-qa-cmds
 audit-all:
 	$(PY) -m tooling.audits.fleet.audit_all_courses
+audit-gold:
+	$(PY) -m tooling.audits.fleet.audit_gold $(if $(GUIDE),--guide $(GUIDE)) $(ARGS)
 runon:
 	$(PY) -m tooling.audits.fleet.audit_runon_lists
 audit-manifests:
