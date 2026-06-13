@@ -143,7 +143,7 @@ E_STUB_RE = re.compile(r"(?i)no\s+(?:significant|notable|major)\b.{0,50}?\byet\b
 WHAT_HOLDS_RE = re.compile(r"(?i)(still\s+hold|what\s+still|source[-\s]stability|stability)")
 # E date stamp: "current as of 2026-06" or "as of June 2026".
 E_DATE_ISO_RE = re.compile(r"(?i)(?:current\s+)?as\s+of\s+(\d{4})-(\d{2})")
-E_DATE_WORD_RE = re.compile(r"(?i)(?:current\s+)?as\s+of\s+([A-Z][a-z]+)\s+(\d{4})")
+E_DATE_WORD_RE = re.compile(r"(?i)(?:current\s+)?as\s+of\s+([A-Z][a-z]+)\.?\s+(\d{4})")
 _MONTHS = {
     m: i + 1 for i, m in enumerate(
         ["january", "february", "march", "april", "may", "june", "july",
@@ -153,14 +153,15 @@ _MONTHS = {
 # Common 3-letter abbreviations ("as of Jun 2026" / "Sept 2026").
 _MONTHS.update({"jan": 1, "feb": 2, "mar": 3, "apr": 4, "jun": 6, "jul": 7,
                 "aug": 8, "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12})
-# Currency-item / debate structural markers. E appendices use itemize
-# (\item) or per-update \subsection/\section headers; F appendices put one
-# \section per debate (the convention across all current F files), each with
-# a "where the book sits" anchor and a verdict flag.
+# Currency-item / debate structural markers. E currency items are item-level
+# (itemize \item or per-update \subsection); top-level \section headers are
+# category/framing groupings ("Library & API Changes"), NOT individual items.
 ITEM_RE = re.compile(r"^\s*\\item\b", re.MULTILINE)
 SUBSECTION_RE = re.compile(r"^\s*\\(?:subsection|paragraph)\*?\{", re.MULTILINE)
-SECTION_RE = re.compile(r"^\s*\\section\*?\{", re.MULTILINE)
-WHERE_BOOK_RE = re.compile(r"(?i)where\s+(?:this|the)\s+book\s+sits")
+# Anchored to the per-debate bold marker (\textbf{Where the book sits.}), NOT the
+# loose phrase: every F template's intro prose also says "...names where the book
+# sits..." once, which would otherwise inflate the debate count by 1.
+WHERE_BOOK_RE = re.compile(r"(?i)\\textbf\{[^}]*?where\s+(?:this|the)\s+book\s+sits")
 VERDICT_RE = re.compile(r"(?i)(well[-\s]supported|contested|dated)")
 
 VELOCITY_MAX_AGE_MONTHS = {"fast": 6, "medium": 12, "slow": 18}
@@ -360,7 +361,10 @@ def count_stub_checkpoint_items(chapters_dir: Path) -> tuple[int, int]:
         for match in CHECKPOINT_ITEM_RE.finditer(content):
             total += 1
             body = match.group(2).strip()
-            stripped = re.sub(r"\\[a-zA-Z]+\*?(\[[^\]]*\])?(\{[^}]*\})?", " ", body)
+            # Strip macro NAMES + optional [..] args but keep {...} arg contents
+            # (so prose inside \textbf{...}/\emph{...} still counts); the next
+            # pass removes the braces, leaving the words.
+            stripped = re.sub(r"\\[a-zA-Z]+\*?(\[[^\]]*\])?", " ", body)
             stripped = re.sub(r"[{}]", " ", stripped)
             words = [w for w in stripped.split() if len(w) > 1]
             if len(words) < 10:
@@ -539,7 +543,7 @@ def check_gate4_crossref(guide_dir: Path) -> GateResult:
     files_with: set[str] = set()
     for tex in sorted(chapters_dir.glob("*.tex")):
         try:
-            text = tex.read_text(encoding="utf-8")
+            text = tex.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
         found = len(CROSSREF_RE.findall(text))
@@ -650,7 +654,9 @@ def _parse_e_date(text: str) -> tuple[int, int] | None:
     """Return (year, month) from the E appendix date stamp, or None."""
     m = E_DATE_ISO_RE.search(text)
     if m:
-        return int(m.group(1)), int(m.group(2))
+        year, month = int(m.group(1)), int(m.group(2))
+        if 1 <= month <= 12:  # reject malformed stamps like "2026-00"
+            return year, month
     m = E_DATE_WORD_RE.search(text)
     if m and m.group(1).lower() in _MONTHS:
         return int(m.group(2)), _MONTHS[m.group(1).lower()]
@@ -658,9 +664,7 @@ def _parse_e_date(text: str) -> tuple[int, int] | None:
 
 
 def _count_currency_items(text: str) -> int:
-    return max(len(ITEM_RE.findall(text)),
-               len(SUBSECTION_RE.findall(text)),
-               len(SECTION_RE.findall(text)))
+    return max(len(ITEM_RE.findall(text)), len(SUBSECTION_RE.findall(text)))
 
 
 def _count_debates(text: str) -> int:
@@ -702,14 +706,17 @@ def _check_e_appendix(guide_dir: Path, qa: dict, now: datetime) -> list[str]:
         issues.append("no 'what still holds' section")
 
     mv = meap_version(guide_dir)
-    if mv is not None and mv.upper() != "TBV" and mv != "unspecified":
-        # MEAP guide: E must NAME the covered version (loose token match). The
-        # spec's "dated at-or-after the MEAP version" sub-check needs a
-        # version->release-date map; that lands with the MEAP-freshness checker
-        # (roadmap T4), which also makes a STALE freshness status fail G7.
-        ver = mv.split()[0] if mv.split() else mv  # e.g. "v4" from "v4 (CloudFront ...)"
-        if not re.search(rf"(?i)\b{re.escape(ver)}\b", body):
-            issues.append(f"E does not name MEAP version ({ver})")
+    if mv is not None:
+        ver = mv.split()[0] if mv.split() else ""  # e.g. "v4" from "v4 (CloudFront ...)"
+        # Enforce "names the covered version" only for a clean vN token (v1..vN).
+        # Unpinned/placeholder values seen in real manifests -- TBV, TODO, n/a,
+        # bare numbers, blank -- are NOT reliably enforceable here (an empty token
+        # would \b-match everywhere; a bare "6" would match any "6" in prose), so
+        # they are skipped. The version<->date tie lands with the MEAP-freshness
+        # checker (roadmap T4), which carries clean version data.
+        if re.fullmatch(r"v\d+", ver, re.IGNORECASE):
+            if not re.search(rf"(?i)\b{re.escape(ver)}\b", body):
+                issues.append(f"E does not name MEAP version ({ver})")
     return issues
 
 
@@ -831,9 +838,11 @@ def write_markdown_report(reports: list[HonestReport], meta: dict[str, str]) -> 
         "|-------|-------|----|----|----|----|----|----|----|",
     ]
     for r in reports:
-        row = [r.slug, r.classification]
-        row += [("PASS" if g.passed else "FAIL") for g in r.gates]
-        lines.append("| " + " | ".join(row) + " |")
+        # Pad/truncate to 7 gate cells so an error row (a single "G0" gate) still
+        # fills the 7-column table rather than producing a ragged 3-cell row.
+        cells = [("PASS" if g.passed else "FAIL") for g in r.gates]
+        cells = (cells + ["—"] * 7)[:7]
+        lines.append("| " + " | ".join([r.slug, r.classification, *cells]) + " |")
     path.write_text("\n".join(lines) + "\n")
     return path
 
