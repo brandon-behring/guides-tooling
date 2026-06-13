@@ -24,6 +24,7 @@ class GuideInfo:
     category: str
     chapters: int
     lines: int
+    status: str = ""  # publication status from guides.yml ("published" | "meap" | "")
 
     def guide_dir(self) -> Path:
         return paths.host_root() / self.slug
@@ -60,6 +61,7 @@ def get_all_guides() -> list[GuideInfo]:
                 category=g.get("category", "other"),
                 chapters=g.get("chapters", 0),
                 lines=g.get("lines", 0),
+                status=g.get("status", ""),
             )
         )
     return out
