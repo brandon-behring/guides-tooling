@@ -40,6 +40,24 @@ and ``margin_quality`` / ``term_consistency`` signal neither (advisory-only in
 their CLI form). G2 therefore detects a failure as ``exit_code != 0`` (running
 each audit with its strict/check flag) OR a ``^FAIL`` line in the output.
 
+Known limitations (documented T2 scope -- see the PR thread):
+- **G2 binary-gates 9 of the 11 audits.** ``margin_quality`` and
+  ``term_consistency`` expose no pass/fail gate in their current CLI, so a bad
+  margin density or a cross-guide term conflict is advisory, not a G2 failure.
+  Making them gate (a ``--strict`` mode on those two T1 audits) is a tracked
+  follow-up, not part of this runner port.
+- **G3 is a built-artifact check, not a live ``make decks`` build.** Run
+  ``make decks`` / ``make decks-all`` before auditing; a clean checkout with no
+  built ``.apkg`` fails "decks/ missing". Gold is locally-verified, not CI-wired.
+- **G7's E/F checks are structural** (date stamp, item/debate counts, the
+  per-debate anchor, the velocity SLA) -- they do not semantically verify that
+  each currency item names a concrete moving surface or that each debate carries
+  dual-sourced positions A/B. Deeper validation tightens during the Track-G
+  promotion waves.
+- **The MEAP version<->date "at-or-after" tie is deferred to T4** (the
+  MEAP-freshness checker, which carries clean version+date data); here G7 only
+  checks that a pinned ``vN`` version is named in E.
+
 Usage:
     python -m tooling.audits.fleet.audit_gold                 # all Silver-PASS
     python -m tooling.audits.fleet.audit_gold --guide <slug>  # single guide
