@@ -4,11 +4,11 @@
 %
 % Silver-tier scaffold. Replace every << FILL: ... >> marker with concrete
 % content; keep section structure so a filled copy exceeds the 100-non-blank-
-% line Silver gate (scripts/audit_silver_fleet.py::check_appendix_d).
+% line Silver gate (tooling.audits.fleet.audit_silver_fleet::check_appendix_d).
 %
 % Exemplars to copy tone from:
-%   manning_rlhf_book/notes/notebook/appendices/D_interview_prep.tex
-%   manning_llm_from_scratch/notes/notebook/appendices/D_interview_prep.tex
+%   evaluation-alignment-safety/manning_rlhf_book/guide/appendices/D_interview_prep.tex
+%   llms-and-transformers/manning_llm_from_scratch/guide/appendices/D_interview_prep.tex
 
 \chapter{Interview Preparation}
 \label{app:interview-prep}
@@ -190,7 +190,7 @@ you to answer. E.g.\ `Design a retrieval system for a legal-research product.'
 % =============================================================================
 
 % Replace the rows below with one row per chapter in this guide. LOS ids
-% should be real (run `scripts/validation/extract_los.py` to confirm).
+% should be real (run `python -m tooling.validation.extract_los` to confirm).
 
 \begin{center}
 \small

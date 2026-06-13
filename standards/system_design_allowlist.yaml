@@ -2,7 +2,7 @@
 #
 # tier_model.md:39 requires Silver guides to include "at least 1 system/design
 # scenario where applicable". This file defines the "where applicable"
-# allowlist. `scripts/audit_silver.py` fails the App-D gate for any
+# allowlist. `tooling.audits.fleet.audit_silver` fails the App-D gate for any
 # guide on this list whose Appendix D lacks a system-design section.
 #
 # Criteria for inclusion: "Would a hiring manager at a company building this
@@ -10,15 +10,16 @@
 # an IC5+/Staff AI-engineering interview?"
 #
 # Exclusions (NOT on this list, therefore exempt):
-#  - Foundations / math / stats (transformer_mathematics, grokking_bayes, etc.)
-#  - RL theory (coursera_rl_specialization, manning_deep_rl_in_action)
-#  - Framework tutorials with no production focus (deep_learning_python_2e)
-#  - Dev-tool demos (claude_code_assistant, computer_use_anthropic)
+#  - Foundations / math / stats (manning_grokking_bayes, manning_grokking_statistics, etc.)
+#  - RL theory (manning_deep_rl_in_action, manning_grokking_deep_rl)
+#  - Framework tutorials with no production focus (manning_deep_learning_python_2e)
+#  - Non-interview dev-tool tutorials
 #  - Out-of-Interview-Scope waivers (docker, packaging, SE philosophy)
-#  - Short algorithmic tutorials (grokking_ai_algorithms_2e)
+#  - Short algorithmic tutorials (manning_grokking_ai_algorithms_2e)
 #
-# Edit with review: adding removes a Silver FAIL, removing restores one. Keep
-# justification in comments when the call is close.
+# Manning-only fleet: the former dlai_*/coursera_* entries were removed (no such
+# guides exist here). Edit with review: adding removes a Silver FAIL, removing
+# restores one. Keep justification in comments when the call is close.
 
 required:
   # --- MLOps / ML platform / production ML infrastructure ---
@@ -37,16 +38,6 @@ required:
   - manning_essential_graphrag
   - manning_rag_seminal_papers
   - manning_ai_powered_search
-  - dlai_advanced_rag
-  - dlai_advanced_retrieval_chroma
-  - dlai_rag_course
-  - dlai_ragas_docs
-  - dlai_knowledge_graphs_rag
-  - dlai_llms_semantic_search
-  - dlai_retrieval_optimization
-  - dlai_multimodal_search_rag
-  - dlai_improving_llm_accuracy
-  - dlai_preprocessing_unstructured_data
 
   # --- Agent systems (tools, memory, orchestration, reliability) ---
   - manning_ai_agent_from_scratch
@@ -55,25 +46,8 @@ required:
   - manning_multi_agent_from_scratch
   - manning_designing_ai_agents
   - manning_designing_ai_systems
-  - dlai_ai_agents_langgraph
-  - dlai_multi_agent_crewai
-  - dlai_agentic_ai
-  - dlai_agentic_kg_construction
-  - dlai_agent_memory
-  - dlai_agent_skills_anthropic
-  - dlai_crewai_deploy
-  - dlai_evaluating_ai_agents
-  - dlai_dspy_agentic_apps
-  - dlai_functions_tools_agents_langchain
-  - dlai_longterm_memory_langgraph
-  - dlai_mcp_anthropic
-  - dlai_build_ai_apps_mcp
-  - dlai_nemo_agent_toolkit
-  - dlai_a2a_protocol
-  - dlai_automated_testing_llmops
 
   # --- LLM serving / inference / architecture ---
-  - dlai_efficiently_serving_llms
   - manning_rearchitecting_llms
   - manning_domain_specific_slms
 
@@ -91,8 +65,6 @@ required:
   - manning_ai_engineering_in_practice
   - manning_eval_alignment_seminal_papers
   - manning_ai_model_evaluation
-  - dlai_genai_with_llms
-  - dlai_quality_safety_llm_apps
 
   # --- Vision / multimodal / diffusion production systems ---
   - manning_stable_diffusion_book
@@ -105,13 +77,8 @@ required:
   - manning_rlhf_book
   - manning_llm_from_scratch
   - manning_transformers_in_action
-  - dlai_finetuning_llms
-  - dlai_finetuning_rl_intro
-  - dlai_grpo_finetuning
-  - dlai_post_training_llms
 
   # --- Data engineering for ML ---
-  - coursera_data_engineering
   - manning_learn_ai_data_engineering
 
   # --- Causal inference / experimentation systems ---
@@ -120,10 +87,3 @@ required:
   # --- HF / framework production patterns ---
   - manning_hugging_face_in_action
   - manning_deep_learning_pytorch_2e
-
-  # --- Safety / security / red teaming systems ---
-  - dlai_red_teaming_llm_apps
-
-  # --- Structured output / pydantic workflows ---
-  - dlai_pydantic_llm_workflows
-  - dlai_openai_function_calling_docs
