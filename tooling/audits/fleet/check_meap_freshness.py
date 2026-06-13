@@ -22,6 +22,15 @@ Design (runs anywhere, including headless/cron):
     (``--dry-run``) but does not execute the capture (the extractor lives in the
     legacy ``course_learning`` repo; see ``meap_freshness.md``).
 
+Staleness semantics (carried over from the source -- worth knowing): the auth-free
+signature is **change-since-last-check** detection -- a guide flagged STALE/STALE?
+records the new live signature, so the *next* run reads OK unless the page changes
+again. It pings on movement; it does not track capture debt indefinitely. The
+**authoritative sticky signal** is the ``--versions`` overlay (an authenticated
+dashboard scan: live ``vN``/date vs the manifest's), which re-compares every run
+until an actual re-capture bumps ``meap_version``/``extracted``. (Making STALE
+sticky on the auth-free path is a possible future enhancement, not a port change.)
+
 Source-of-truth split (never clobber hand-authored files):
   * review/cache_manifest.yml  -- hand/extractor-authored MEAP provenance (READ
     only; minimally bootstrapped ONLY if entirely absent).
@@ -136,11 +145,19 @@ def meap_guides() -> list[str]:
     return [g.slug for g in scope.get_all_guides() if g.status == "meap"]
 
 
+def _is_bootstrap(manifest: dict) -> bool:
+    """True only for THIS checker's *minimal bootstrap* manifest -- NOT extractor
+    provenance like ``_generated_by: 'DSPy build P1 capture ...'``. A hand- or
+    extractor-authored manifest's ``livebook_slug`` must still be honored (else a
+    well-captured guide false-reports UNRESOLVED)."""
+    return "minimal bootstrap" in str(manifest.get("_generated_by", ""))
+
+
 def resolve_slug(internal: str, manifest: dict | None) -> str | None:
-    """Resolution order: a HAND-authored manifest, then overrides, then the inlined map.
-    Tool-bootstrapped manifests (``_generated_by``) are ignored so a RENAMED book keeps
-    re-flagging until a human fixes the slug. None = unresolved."""
-    if manifest and manifest.get("livebook_slug") and not manifest.get("_generated_by"):
+    """Resolution order: a HAND/extractor-authored manifest, then overrides, then the
+    inlined map. The checker's own minimal-bootstrap manifests are ignored so a RENAMED
+    book keeps re-flagging until a human fixes the slug. None = unresolved."""
+    if manifest and manifest.get("livebook_slug") and not _is_bootstrap(manifest):
         return manifest["livebook_slug"]
     return SLUG_OVERRIDES.get(internal) or LIVEBOOK_SLUGS.get(internal)
 
@@ -203,7 +220,7 @@ def parse_state(html: str) -> dict:
     m = re.search(r"(Chapter[s]?\s+\d[^.]{0,180}?in\s+[A-Z][A-Za-z0-9 :,&'\-]{3,60})", text)
     if m:
         note = m.group(1).strip()
-    latest_ch = max([int(n) for n in re.findall(r"[Cc]hapter\s+(\d{1,2})", note)] or [0])
+    latest_ch = max([int(n) for n in re.findall(r"[Cc]hapter[s]?\s+(\d{1,2})", note)] or [0])
     is_meap = bool(re.search(r"\bMEAP\b", text))
     pub_m = re.search(r"Publication in ([A-Za-z]+ \d{4})", text)
     pub = pub_m.group(1) if pub_m else ""
@@ -220,7 +237,7 @@ def parse_state(html: str) -> dict:
 
 
 # --------------------------------------------------------------------------- version overlay
-def guide_build_date(full_slug: str, manifest: dict | None) -> str | None:
+def guide_build_date(manifest: dict | None) -> str | None:
     """Best-effort ISO date the guide was last built (manifest ``extracted``)."""
     if manifest and manifest.get("extracted"):
         return str(manifest["extracted"])
@@ -241,10 +258,15 @@ def version_overlay(row: dict, manifest: dict | None, vinfo: dict | None) -> dic
     overrides RENAMED)."""
     if not vinfo:
         return row
-    live_ver, live_date = vinfo.get("version"), vinfo.get("last_updated")
+    # Normalize the caller-supplied version to an int ('v12'/'12'/12 -> 12) so the
+    # `live_ver > rec_ver` comparison can't raise TypeError on a string and abort
+    # the whole sweep (this path is outside run_check's try/except).
+    raw_ver, live_date = vinfo.get("version"), vinfo.get("last_updated")
+    vm = re.search(r"\d+", str(raw_ver)) if raw_ver is not None else None
+    live_ver = int(vm.group()) if vm else None
     row["live_version"], row["live_last_updated"] = live_ver, live_date
     rec_ver = parse_manifest_version(manifest)
-    build_date = guide_build_date(row["full_slug"], manifest)
+    build_date = guide_build_date(manifest)
     drift = None
     if rec_ver is not None and live_ver is not None and live_ver > rec_ver:
         drift = f"v{rec_ver} -> v{live_ver} (upstream updated {live_date})"
@@ -261,7 +283,9 @@ def version_overlay(row: dict, manifest: dict | None, vinfo: dict | None) -> dic
 def classify(internal: str, recorded_slug: str, final_url: str, live: dict,
              prior: dict | None, captured: int | None) -> dict:
     """Return a row dict: status + human drift note."""
-    final_slug = final_url.rstrip("/").split("/")[-1]
+    # Strip any ?query / #fragment before deriving the slug, else a tracking
+    # param on the redirect (e.g. ?a_aid=...) yields a persistent false RENAMED.
+    final_slug = final_url.split("?")[0].split("#")[0].rstrip("/").split("/")[-1]
     renamed = final_slug != recorded_slug
     prior_sig = (prior or {}).get("signature")
     latest = live["latest_released_chapter"]
@@ -352,6 +376,9 @@ def run_check(only: str | None, snapshot: dict | None, versions: dict | None, wr
                 if not snap:
                     raise KeyError("not in snapshot")
                 final_url, live = snap["final_url"], snap["state"]
+                _need = {"signature", "latest_released_chapter", "planned_chapters", "latest_release_note"}
+                if not isinstance(live, dict) or not _need.issubset(live):
+                    raise ValueError(f"snapshot 'state' missing {_need - set(live or {})}")
             else:
                 final_url, html = fetch_product(recorded_slug)
                 live = parse_state(html)
@@ -373,9 +400,15 @@ def run_check(only: str | None, snapshot: dict | None, versions: dict | None, wr
             row = version_overlay(row, manifest, versions.get(recorded_slug) or versions.get(row["live_slug"]))
         rows.append(row)
         if write:
-            write_state(full_slug, row, recorded_slug)
-            if not manifest and row["status"] in ("OK", "BASELINE"):
-                bootstrap_cache_manifest(full_slug, row["live_slug"], live)
+            if guide_dir_for_slug(full_slug) is None:
+                # No on-disk guide dir (guide_qa.yaml absent, e.g. partially
+                # scaffolded) -- never write state to a wrong flat-path fallback.
+                print(f"WARN: {full_slug}: no guide dir on disk; skipping state write",
+                      file=sys.stderr)
+            else:
+                write_state(full_slug, row, recorded_slug)
+                if not manifest and row["status"] in ("OK", "BASELINE"):
+                    bootstrap_cache_manifest(full_slug, row["live_slug"], live)
     return rows
 
 
@@ -420,6 +453,7 @@ def render_report(rows: list[dict]) -> str:
 def run_refresh(slug: str | None, dry_run: bool) -> int:
     if not slug:
         raise SystemExit("ERROR: --refresh requires --slug <guide>")
+    slug = internal_slug(slug)  # accept either manning_<x> or the internal <x>
     plan = [
         "1. Re-capture chapters from livebook (AUTHENTICATED) via the legacy "
         "course_learning extractor: scripts/extract_remaining_manning.py --slug " + slug,

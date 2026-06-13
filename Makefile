@@ -43,11 +43,13 @@ audit-all:
 	$(PY) -m tooling.audits.fleet.audit_all_courses
 audit-gold:
 	$(PY) -m tooling.audits.fleet.audit_gold $(if $(GUIDE),--guide $(GUIDE)) $(ARGS)
+# DRY_RUN=1 applies only with REFRESH=1; detection always writes freshness_state.yml
+# unless NO_WRITE=1.
 meap-freshness:
 	$(PY) -m tooling.audits.fleet.check_meap_freshness \
 	  $(if $(SLUG),--slug $(SLUG)) $(if $(SNAPSHOT),--snapshot $(SNAPSHOT)) \
 	  $(if $(VERSIONS),--versions $(VERSIONS)) $(if $(REFRESH),--refresh) \
-	  $(if $(DRY_RUN),--dry-run) $(ARGS)
+	  $(if $(DRY_RUN),--dry-run) $(if $(NO_WRITE),--no-write) $(ARGS)
 runon:
 	$(PY) -m tooling.audits.fleet.audit_runon_lists
 audit-manifests:
