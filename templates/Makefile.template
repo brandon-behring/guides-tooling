@@ -4,7 +4,9 @@ LATEXFLAGS = -shell-escape -interaction=nonstopmode -file-line-error
 LATEXMK = latexmk
 LATEXMK_FLAGS = -lualatex -shell-escape -interaction=nonstopmode -file-line-error
 
-.PHONY: all digital print pilot clean cards decks qa qa-build qa-refs qa-los qa-cards qa-presentation qa-health qa-ready
+TOOLING ?= ../../../tooling
+
+.PHONY: all digital print pilot clean cards decks qa qa-build qa-refs qa-los qa-presentation qa-health qa-ready
 
 all: digital
 
@@ -34,31 +36,12 @@ clean:
 	rm -f chapters/*.aux appendices/*.aux
 	rm -rf _minted-*
 
-# ── Card & Deck Targets ────────────────────────────────────────────────────
-cards:
-	python3 ../../shared/cards/extract_cards.py \
-		chapters/*.tex -o cards/
-
-decks:
-	python3 ../../shared/anki/yaml_to_apkg.py \
-		cards/all_cards.yml \
-		--deck-prefix "{{GUIDE_NAME}}" \
-		-o decks/
-
-# ── QA Targets ──────────────────────────────────────────────────────────────
-qa: qa-build qa-refs qa-los qa-cards qa-presentation
+# ── QA Targets (build-dependent; the rest come from the tooling include) ──────
+qa: qa-build qa-refs qa-los qa-presentation
 qa-build:
 	$(LATEX) $(LATEXFLAGS) $(MAIN).tex
-qa-refs:
-	python3 ../scripts/validation/check_refs.py chapters/*.tex appendices/*.tex
-qa-los:
-	python3 ../scripts/validation/extract_los.py chapters/*.tex --validate
-qa-cards:
-	python3 ../../shared/cards/extract_cards.py \
-		chapters/*.tex -o cards/ --validate 2>/dev/null || true
-qa-presentation:
-	python3 ../scripts/validation/check_latex_warnings.py $(MAIN).log
-qa-health:
-	python3 ../../shared/qa/guide_health.py --config ../guide_qa.yaml
-qa-ready:
-	python3 ../../shared/qa/guide_readiness.py --config ../guide_qa.yaml
+
+# guides-tooling submodule — shared card/deck/QA targets:
+# cards, decks, qa-refs, qa-los, qa-presentation, qa-health, qa-ready.
+# TOOLING is depth-aware (../../../tooling from <topic>/<slug>/guide/).
+include $(TOOLING)/Makefile

@@ -3,7 +3,7 @@
 # Mounted as a submodule at <host>/tooling/. A consuming guide's Makefile does:
 #
 #     MAIN    = main
-#     TOOLING ?= ../../tooling          # relative to the guide/ dir (depth-aware)
+#     TOOLING ?= ../../../tooling       # from <topic>/<slug>/guide/ to <host>/tooling
 #     include $(TOOLING)/Makefile
 #     # ... plus the guide's own PDF targets (pilot/digital/print/clean)
 #
