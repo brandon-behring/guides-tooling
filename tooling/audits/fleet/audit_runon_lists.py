@@ -104,12 +104,19 @@ def _strip_margin_macros(text: str) -> str:
         j = m.end()  # just past the opening brace
         depth = 1
         while j < len(text) and depth:
-            if text[j] == "{":
+            c = text[j]
+            if c == "\\":  # escaped char (\{ \} \% …) — not a real brace
+                j += 2
+                continue
+            if c == "{":
                 depth += 1
-            elif text[j] == "}":
+            elif c == "}":
                 depth -= 1
             j += 1
-        i = j  # resume after the (balanced) closing brace
+        # Balanced close → resume after it. UNCLOSED brace → don't swallow the
+        # rest of the file (which would silently hide downstream run-ons); skip
+        # only the macro keyword and rescan from there.
+        i = j if depth == 0 else m.end()
 
 
 def scan_text(text: str) -> int:
