@@ -11,8 +11,15 @@ the PDF and extract as blob card backs.
 This scans every guide's chapter + appendix .tex and reports, per guide, how
 many paragraphs look like inline run-on lists. It is **advisory only** (always
 exits 0) — it surfaces the debt fleet-wide so it can be prioritized; it never
-gates Bronze/Silver. A paragraph that already contains ``\\item`` (i.e. a real
-list, or a list body) is skipped to avoid flagging well-formed content.
+gates Bronze/Silver. To keep the count on *real chapter-prose* debt, the
+following are not flagged: a paragraph with ``\\item`` (a real list) or
+``\\term[`` (a glossary entry); ``problem``/``solution``/``vignette``/etc.
+prompt environments and ``debugbox``/``conceptbox`` styled cards; **display
+math + inline ``$…$``** (so value-function notation like ``$V(1), V(2)$`` is not
+read as a ``(1)…(2)…`` enumeration, and an ``aligned`` block's ``\\textbf{X:}``
+row labels are not read as inline headers); and **margin convenience macros**
+(``\\patternmargin`` etc.), where a terse recitable ``(1) … (2) … (3) …``
+mnemonic is the intended idiom, not debt.
 
 Usage:
     PYTHONPATH=tooling python3 -m tooling.audits.fleet.audit_runon_lists
@@ -62,10 +69,66 @@ EXCLUDE_TCB = re.compile(
     r".*?\\end\{tcolorbox\}",
     re.DOTALL,
 )
+# Math is not prose: an aligned/equation block's `\textbf{REINFORCE:}`-style row
+# labels are equation labels, not inline section headers; and value-function
+# notation like `$V(1)$, $V(2)$` is not a `(1)…(2)…` enumeration. Strip display-
+# math environments and inline `$…$` / `\[…\]` spans before counting so they
+# cannot trip NUM/LET/HDR.
+EXCLUDE_MATH = re.compile(
+    r"\\begin\{((?:equation|aligned|align|gather|alignat|multline|eqnarray)\*?)\}"
+    r".*?\\end\{\1\}",  # star is inside the backref → align pairs with align, align* with align*
+    re.DOTALL,
+)
+# Inline math `$…$` (allowing escaped `\$` currency *inside* the math, e.g.
+# `$V(1) = \$50$`) and `\[…\]` display math. The `\[` opener is guarded with
+# `(?<!\\)` so it does NOT fire on the `[` of a `\\[2pt]` line-break spacing
+# command (which would otherwise strip prose through the next `\]`).
+# Known limitation: a `$…$` span whose content is *only* an enum marker (the
+# non-idiomatic `$(1)$ Foo $(2)$ Bar` style — absent from this fleet) is stripped
+# like any math and would not flag.
+INLINE_MATH = re.compile(r"(?<!\\)\$(?:\\.|[^$\\])*\$|(?<!\\)\\\[.*?\\\]", re.DOTALL)
+# Margin convenience macros (\patternmargin, \practicemargin, …) are terse
+# recitable mnemonics by design — an inline `(1) … (2) … (3) …` procedure IS the
+# idiom (a vertical list overflows the narrow margin and loses the recite-as-a-
+# sentence quality), so their brace content is stripped, not flagged.
+MARGIN_MACRO = re.compile(
+    r"\\(?:pattern|practice|interview|formula|warning|crossref)margin\s*\{"
+)
+
+
+def _strip_margin_macros(text: str) -> str:
+    """Remove `\\<role>margin{ ... }` spans (balanced braces) before scanning."""
+    out: list[str] = []
+    i = 0
+    while True:
+        m = MARGIN_MACRO.search(text, i)
+        if not m:
+            out.append(text[i:])
+            return "".join(out)
+        out.append(text[i:m.start()])
+        j = m.end()  # just past the opening brace
+        depth = 1
+        while j < len(text) and depth:
+            c = text[j]
+            if c == "\\":  # escaped char (\{ \} \% …) — not a real brace
+                j += 2
+                continue
+            if c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+            j += 1
+        # Balanced close → resume after it. UNCLOSED brace → don't swallow the
+        # rest of the file (which would silently hide downstream run-ons); skip
+        # only the macro keyword and rescan from there.
+        i = j if depth == 0 else m.end()
 
 
 def scan_text(text: str) -> int:
     text = EXCLUDE_TCB.sub(" ", EXCLUDE_ENV.sub(" ", text))
+    text = EXCLUDE_MATH.sub(" ", text)
+    text = _strip_margin_macros(text)
+    text = INLINE_MATH.sub(" ", text)
     flagged = 0
     for para in re.split(r"\n\s*\n", text):
         if "\\item" in para:
@@ -110,9 +173,12 @@ def main() -> int:
         "section-header pairs (`\\textbf{X:} … \\textbf{Y:}`) that should be `itemize`/",
         "`enumerate`/`description` per `tooling/standards/card_standards.md`. **Advisory",
         "only** — it does not gate Bronze/Silver. Skipped (legitimate, not debt):",
-        "paragraphs with `\\item` (real lists), `\\term[...]` glossary definitions, and",
+        "paragraphs with `\\item` (real lists) or `\\term[...]` (glossary entries);",
         "`problem`/`vignette`/`solution`/`redflag`/`debugbox`/`drill`/`interviewcontext`",
-        "environments (structured cards & prompts where inline enumeration is intended).",
+        "environments + `debugbox`/`conceptbox` styled cards; display + inline `$…$`",
+        "math (`$V(1),V(2)$` is not a `(1)…(2)…` list; `aligned` row labels aren't",
+        "inline headers); and margin macros (`\\patternmargin` …), where a terse",
+        "recitable `(1) … (2) … (3) …` mnemonic is the intended idiom.",
         "",
         f"**Total flagged paragraphs: {grand} across {len(offenders)}/{len(rows)} guides.**",
         "",
