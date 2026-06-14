@@ -75,13 +75,18 @@ EXCLUDE_TCB = re.compile(
 # math environments and inline `$…$` / `\[…\]` spans before counting so they
 # cannot trip NUM/LET/HDR.
 EXCLUDE_MATH = re.compile(
-    r"\\begin\{(equation|aligned|align|gather|alignat|multline|eqnarray)\*?\}"
-    r".*?\\end\{\1\*?\}",
+    r"\\begin\{((?:equation|aligned|align|gather|alignat|multline|eqnarray)\*?)\}"
+    r".*?\\end\{\1\}",  # star is inside the backref → align pairs with align, align* with align*
     re.DOTALL,
 )
 # Inline math `$…$` (allowing escaped `\$` currency *inside* the math, e.g.
-# `$V(1) = \$50$`) and `\[…\]` display math.
-INLINE_MATH = re.compile(r"(?<!\\)\$(?:\\.|[^$\\])*\$|\\\[.*?\\\]", re.DOTALL)
+# `$V(1) = \$50$`) and `\[…\]` display math. The `\[` opener is guarded with
+# `(?<!\\)` so it does NOT fire on the `[` of a `\\[2pt]` line-break spacing
+# command (which would otherwise strip prose through the next `\]`).
+# Known limitation: a `$…$` span whose content is *only* an enum marker (the
+# non-idiomatic `$(1)$ Foo $(2)$ Bar` style — absent from this fleet) is stripped
+# like any math and would not flag.
+INLINE_MATH = re.compile(r"(?<!\\)\$(?:\\.|[^$\\])*\$|(?<!\\)\\\[.*?\\\]", re.DOTALL)
 # Margin convenience macros (\patternmargin, \practicemargin, …) are terse
 # recitable mnemonics by design — an inline `(1) … (2) … (3) …` procedure IS the
 # idiom (a vertical list overflows the narrow margin and loses the recite-as-a-
