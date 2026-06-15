@@ -14,8 +14,9 @@ Import-era drift left two broken command families in every consuming guide's
 
 This rewrites **only** those five command lines, in place, via targeted
 line replacement — every other line (targets, yellow, anki, comments,
-formatting) is left byte-identical. Each guide's own PDF/log artifact
-(``main`` vs ``main_digital``) is preserved. The new commands are rendered
+formatting) is left byte-identical. Each guide's own log artifact
+(``main`` vs ``main_digital``) is preserved; the page_count command tries both
+PDFs (``main.pdf`` first). The new commands are rendered
 through ``yaml.dump`` so escaping is always correct, and each rewritten file is
 re-parsed to assert the five commands decode to the intended shell strings.
 
@@ -42,13 +43,26 @@ from tooling import discovery, paths
 
 # ── Canonical command templates (real shell strings; {…} filled per guide) ──
 
-# Robust page count: pdfinfo primary, mdls fallback (mirrors manning_causal_ai).
+# Robust page count: try guide/main.pdf first, then guide/main_digital.pdf, taking the
+# first that yields a count (pdfinfo primary, mdls fallback per file). main.pdf is
+# preferred because the qa-health/dashboard flow rebuilds it fresh via `make pilot`,
+# whereas main_digital.pdf is only as fresh as the last manual `make digital` — a stale
+# leftover must NOT win over the freshly-built pilot PDF (e.g. deep_learning_jax has a
+# fresh main.pdf=47 but an older main_digital.pdf=35). This order is also consistent with
+# the G2 page_count floors, which were derived from main.pdf counts. (The fleet REPORT
+# path, aggregate.py:pdf_pages, prefers main_digital because build_one.sh rebuilds it
+# there — a different, digital-fresh context.) Trying both is what fixes the 9 guides
+# whose check pinned a main_digital.pdf that `make pilot` never builds → 'unknown' → false
+# G6 RED. NOTE: this inline form has no timeout/except guard and the mdls branch is
+# macOS-only; adequate here (macOS fleet, pdfinfo always present, guide_health caps the
+# cmd at 30s), but the fully-robust form is a tooling.validation.page_count module (see
+# the python -m tooling.validation.* pattern used by the other checks) — deferred follow-up.
 PAGE_TMPL = (
-    "python3 -c \"import subprocess,re,shutil; pdf='{pdf}'; "
-    "r=subprocess.run(['pdfinfo',pdf],capture_output=True,text=True) if shutil.which('pdfinfo') "
-    "else subprocess.run(['mdls','-name','kMDItemNumberOfPages',pdf],capture_output=True,text=True); "
-    "m=re.search(r'Pages:\\s*(\\d+)',r.stdout) or re.search(r'=\\s*(\\d+)',r.stdout); "
-    "print(m.group(1) if m else 'unknown')\""
+    "python3 -c \"import subprocess,re,pathlib,shutil; ex=shutil.which('pdfinfo'); "
+    "g=lambda f: (re.search(r'Pages:\\s*(\\d+)',subprocess.run(['pdfinfo',f],capture_output=True,text=True).stdout) "
+    "if ex else re.search(r'=\\s*(\\d+)',subprocess.run(['mdls','-name','kMDItemNumberOfPages',f],capture_output=True,text=True).stdout)); "
+    "v=next((m.group(1) for f in ('guide/main.pdf','guide/main_digital.pdf') if pathlib.Path(f).exists() and (m:=g(f))), 'unknown'); "
+    "print(v)\""
 )
 # Overflow metric: canonical tooling validator + the CORRECT json key (overfull_50pt).
 OVERFLOW_TMPL = (
@@ -59,7 +73,6 @@ REFS_TMPL = "PYTHONPATH={rel} python3 -m tooling.validation.check_refs guide/cha
 LOS_TMPL = "PYTHONPATH={rel} python3 -m tooling.validation.extract_los guide/chapters/*.tex --validate"
 PRES_TMPL = "PYTHONPATH={rel} python3 -m tooling.validation.check_latex_warnings {log} --threshold-red 5"
 
-_PDF_RE = re.compile(r"guide/main(?:_digital)?\.pdf")
 _LOG_RE = re.compile(r"main(?:_digital)?\.log")
 
 
@@ -72,11 +85,6 @@ def _emit(key: str, shell: str, indent: int) -> str:
     """
     esc = shell.replace("\\", "\\\\").replace('"', '\\"')
     return f'{" " * indent}{key}: "{esc}"'
-
-
-def _pdf_path(old: str) -> str:
-    m = _PDF_RE.search(old)
-    return m.group(0) if m else "guide/main.pdf"
 
 
 def _log_path(old: str) -> str:
@@ -104,7 +112,7 @@ def rewrite(text: str, rel: str) -> tuple[str, bool]:
         new = line
         if section == "metrics" and re.match(r"^    check_cmd:", line):
             if metric == "page_count":
-                new = _emit("check_cmd", PAGE_TMPL.format(pdf=_pdf_path(line)), 4)
+                new = _emit("check_cmd", PAGE_TMPL, 4)
             elif metric == "latex_overflow_visible":
                 new = _emit("check_cmd", OVERFLOW_TMPL.format(rel=rel, log=_log_path(line)), 4)
         elif section == "readiness_checks" and re.match(r"^    cmd:", line):
@@ -133,6 +141,8 @@ def _verify(new_text: str, rel: str) -> None:
     pc = (metrics.get("page_count") or {}).get("check_cmd")
     if pc is not None:
         assert "pdfinfo" in pc, "page_count not repaired (no pdfinfo)"
+        assert "main_digital.pdf" in pc and "guide/main.pdf" in pc, \
+            "page_count must try both main_digital.pdf and main.pdf"
     ov = (metrics.get("latex_overflow_visible") or {}).get("check_cmd")
     if ov is not None:
         assert "tooling.validation.check_latex_warnings" in ov and "overfull_50pt" in ov, "overflow not repaired"
@@ -143,7 +153,7 @@ def _verify(new_text: str, rel: str) -> None:
         assert "~/Claude" not in c, f"stray ~/Claude path: {c}"
         assert "scripts/validation/" not in c, f"stray local scripts/validation path: {c}"
         if "mdls" in c:
-            assert c == pc, f"stray mdls outside page_count fallback: {c}"
+            assert pc is not None and c == pc, f"stray mdls in non-page_count cmd: {c!r}"
 
 
 def main() -> int:
