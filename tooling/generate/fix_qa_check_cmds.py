@@ -42,13 +42,17 @@ from tooling import discovery, paths
 
 # ── Canonical command templates (real shell strings; {…} filled per guide) ──
 
-# Robust page count: pdfinfo primary, mdls fallback (mirrors manning_causal_ai).
+# Robust page count: prefer the multi-pass main_digital.pdf, else main.pdf (mirrors
+# scripts/fleet/aggregate.py:pdf_pages); pdfinfo primary, mdls fallback per file.
+# Trying both PDFs is what makes it resilient: a guide whose page_count was set to
+# main_digital.pdf but only has a pilot-built main.pdf still reports a real count
+# instead of 'unknown' (the bug that false-RED'd 9 guides on G6).
 PAGE_TMPL = (
-    "python3 -c \"import subprocess,re,shutil; pdf='{pdf}'; "
-    "r=subprocess.run(['pdfinfo',pdf],capture_output=True,text=True) if shutil.which('pdfinfo') "
-    "else subprocess.run(['mdls','-name','kMDItemNumberOfPages',pdf],capture_output=True,text=True); "
-    "m=re.search(r'Pages:\\s*(\\d+)',r.stdout) or re.search(r'=\\s*(\\d+)',r.stdout); "
-    "print(m.group(1) if m else 'unknown')\""
+    "python3 -c \"import subprocess,re,pathlib,shutil; ex=shutil.which('pdfinfo'); "
+    "g=lambda f: (re.search(r'Pages:\\s*(\\d+)',subprocess.run(['pdfinfo',f],capture_output=True,text=True).stdout) "
+    "if ex else re.search(r'=\\s*(\\d+)',subprocess.run(['mdls','-name','kMDItemNumberOfPages',f],capture_output=True,text=True).stdout)); "
+    "v=next((m.group(1) for f in ('guide/main_digital.pdf','guide/main.pdf') if pathlib.Path(f).exists() and (m:=g(f))), 'unknown'); "
+    "print(v)\""
 )
 # Overflow metric: canonical tooling validator + the CORRECT json key (overfull_50pt).
 OVERFLOW_TMPL = (
@@ -59,7 +63,6 @@ REFS_TMPL = "PYTHONPATH={rel} python3 -m tooling.validation.check_refs guide/cha
 LOS_TMPL = "PYTHONPATH={rel} python3 -m tooling.validation.extract_los guide/chapters/*.tex --validate"
 PRES_TMPL = "PYTHONPATH={rel} python3 -m tooling.validation.check_latex_warnings {log} --threshold-red 5"
 
-_PDF_RE = re.compile(r"guide/main(?:_digital)?\.pdf")
 _LOG_RE = re.compile(r"main(?:_digital)?\.log")
 
 
@@ -72,11 +75,6 @@ def _emit(key: str, shell: str, indent: int) -> str:
     """
     esc = shell.replace("\\", "\\\\").replace('"', '\\"')
     return f'{" " * indent}{key}: "{esc}"'
-
-
-def _pdf_path(old: str) -> str:
-    m = _PDF_RE.search(old)
-    return m.group(0) if m else "guide/main.pdf"
 
 
 def _log_path(old: str) -> str:
@@ -104,7 +102,7 @@ def rewrite(text: str, rel: str) -> tuple[str, bool]:
         new = line
         if section == "metrics" and re.match(r"^    check_cmd:", line):
             if metric == "page_count":
-                new = _emit("check_cmd", PAGE_TMPL.format(pdf=_pdf_path(line)), 4)
+                new = _emit("check_cmd", PAGE_TMPL, 4)
             elif metric == "latex_overflow_visible":
                 new = _emit("check_cmd", OVERFLOW_TMPL.format(rel=rel, log=_log_path(line)), 4)
         elif section == "readiness_checks" and re.match(r"^    cmd:", line):
@@ -133,6 +131,8 @@ def _verify(new_text: str, rel: str) -> None:
     pc = (metrics.get("page_count") or {}).get("check_cmd")
     if pc is not None:
         assert "pdfinfo" in pc, "page_count not repaired (no pdfinfo)"
+        assert "main_digital.pdf" in pc and "guide/main.pdf" in pc, \
+            "page_count must try both main_digital.pdf and main.pdf"
     ov = (metrics.get("latex_overflow_visible") or {}).get("check_cmd")
     if ov is not None:
         assert "tooling.validation.check_latex_warnings" in ov and "overfull_50pt" in ov, "overflow not repaired"
