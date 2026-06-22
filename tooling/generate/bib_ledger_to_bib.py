@@ -59,6 +59,23 @@ def _arxiv_id(url: str) -> str | None:
     return m.group(1) if m else None
 
 
+def _escape_amp(s: str) -> str:
+    r"""Escape a bare ``&`` (not already ``\&``) — the unambiguous LaTeX
+    alignment-tab breaker. Math-safe (touches nothing else), idempotent."""
+    return re.sub(r"(?<!\\)&", r"\\&", s)
+
+
+def _escape_note(s: str) -> str:
+    r"""Idempotently escape the LaTeX specials common in free-text ``note`` /
+    ``venue`` fields. The ``(?<!\\)`` guard makes it a no-op on already-escaped
+    input (e.g. a ledger ``venue: Chapman \& Hall``). ``$`` / ``^`` / ``~`` are
+    left alone to preserve any intentional math; URLs are ``\url{}``-wrapped at
+    the call site instead, so their underscores never reach here."""
+    for ch in ("&", "%", "#", "_"):
+        s = re.sub(r"(?<!\\)" + re.escape(ch), "\\" + ch, s)
+    return s
+
+
 def _entry_type(e: dict) -> str:
     url = (e.get("primary_url") or "").lower()
     venue = (e.get("venue") or "").lower()
@@ -77,10 +94,10 @@ def _authors(a: str | None) -> str | None:
     if not a:
         return None
     a = re.sub(r"\s*\((?:19|20)\d{2}\)\s*$", "", a.strip()).strip()  # drop trailing "(2021)"
+    a = a.replace(" & ", " and ")  # biblatex needs ' and ' between authors; raw & = align tab
     if re.search(r"\bet\s+al\.?$", a, re.IGNORECASE):
-        first = re.sub(r"\s*,?\s*et\s+al\.?$", "", a, flags=re.IGNORECASE).strip()
-        return f"{first} and others"
-    return a
+        a = re.sub(r"\s*,?\s*et\s+al\.?$", "", a, flags=re.IGNORECASE).strip() + " and others"
+    return _escape_amp(a)  # backstop for any remaining bare & (e.g. "AT&T")
 
 
 def render_entry(e: dict) -> str:
@@ -93,11 +110,12 @@ def render_entry(e: dict) -> str:
     if au:
         fields.append(("author", au))
     if e.get("title"):
-        fields.append(("title", "{" + e["title"].strip() + "}"))  # extra braces protect case
+        # extra braces protect case; _escape_amp guards a bare & (math-safe)
+        fields.append(("title", "{" + _escape_amp(e["title"].strip()) + "}"))
     if btype == "inproceedings" and venue:
-        fields.append(("booktitle", venue))
+        fields.append(("booktitle", _escape_note(venue)))
     elif btype == "article" and venue and not axid:
-        fields.append(("journal", venue))
+        fields.append(("journal", _escape_note(venue)))
     # An explicit ledger ``year:`` wins; otherwise derive from venue /
     # published_online. The derivation regex can mis-fire on an arXiv id that
     # leads with a 19xx/20xx-looking prefix (e.g. arXiv:1907.07271 → "1907"),
@@ -113,9 +131,10 @@ def render_entry(e: dict) -> str:
     if axid:
         notes.append(f"arXiv:{axid}")
     if venue and btype == "misc":
-        notes.append(venue)
+        notes.append(_escape_note(venue))
     if e.get("code_url"):
-        notes.append("code: " + e["code_url"].strip())
+        # \url{} renders the URL safely (underscores etc. need no escaping inside it)
+        notes.append("code: \\url{" + e["code_url"].strip() + "}")
     if notes:
         fields.append(("note", "; ".join(notes)))
 

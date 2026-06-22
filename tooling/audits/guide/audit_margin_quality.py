@@ -72,6 +72,33 @@ GENERIC_PATTERNS: list[tuple[str, str]] = [
     (r"\bsimilar to\b.*\bmethods\b", "vague analogy"),
 ]
 
+# ── Content-free templated/scaffold margins ──────────────────────────────────
+# A distinct class from GENERIC_PATTERNS: a margin whose ENTIRE text is a
+# scaffold template that merely restates the chapter title ("Common mistake in
+# <title>.") with no actual mistake / pattern / technique. Patterns are anchored
+# to the whole note and exclude a ``:`` (which would introduce real content), so
+# a genuine "Common mistake in X: <specific failure>" is NOT flagged. Gated
+# independently of density via ``--strict-templates`` (see main).
+TEMPLATE_SIGNATURES: list[tuple[str, str]] = [
+    (r"(?i)^\s*common mistake in [^:]{1,90}\.?\s*$",
+     "templated scaffold: names the section, not the mistake"),
+    (r"(?i)^\s*key pattern from [^:]{1,90}\.?\s*$",
+     "templated scaffold: names the section, not the pattern"),
+    (r"(?i)^\s*implement a small example applying [^:]{1,90}\.?\s*$",
+     "templated scaffold: generic practice stub (no time/technique)"),
+    (r"(?i)^\s*see related [^:]{1,60}chapters?[^:]{0,40}\.?\s*$",
+     "templated scaffold: vague cross-reference"),
+]
+_TEMPLATE_RES = [(re.compile(p), label) for p, label in TEMPLATE_SIGNATURES]
+
+
+def templated_margin_label(text: str) -> Optional[str]:
+    """Return the scaffold-template label if ``text`` is a content-free template."""
+    for rx, label in _TEMPLATE_RES:
+        if rx.match(text):
+            return label
+    return None
+
 # ── Density thresholds ───────────────────────────────────────────────────────
 # B12: Chapter-type-aware density targets (Stull & Mayer 2007)
 # Code-heavy chapters (>5 minted blocks) need fewer margin notes to avoid
@@ -452,6 +479,9 @@ def main() -> None:
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--strict", "--check", dest="strict", action="store_true",
                         help="exit 1 if any audited guide is margin density/quality RED")
+    parser.add_argument("--strict-templates", dest="strict_templates", action="store_true",
+                        help="exit 1 if any audited guide has content-free templated/scaffold "
+                             "margins (independent of density; this is the gated subset)")
     parser.add_argument("--repo-root", type=str, default=None)
     args = parser.parse_args()
 
@@ -493,6 +523,23 @@ def main() -> None:
             flags = [s for s, st in (("density", g.density_status), ("quality", g.quality_status)) if st == "RED"]
             print(f"FAIL  {g.slug}: margin {'+'.join(flags)} RED", file=sys.stderr)
         if red:
+            sys.exit(1)
+
+    # --strict-templates: a content-free scaffold margin ("Common mistake in
+    # <title>.") is a visible craft defect. Gated SEPARATELY from --strict so the
+    # templated-margin subset can be a hard G2 gate while full margin density/
+    # quality gating (T2b) stays deferred. FAIL → stderr; exit 1 keys G2.
+    if args.strict_templates:
+        flagged = False
+        for g in results:
+            for ch in g.chapters:
+                for note in ch.notes:
+                    label = templated_margin_label(note.text)
+                    if label:
+                        flagged = True
+                        print(f"FAIL  {g.slug}: templated margin ({Path(note.file_path).name}:"
+                              f"{note.line_number}) — {label}", file=sys.stderr)
+        if flagged:
             sys.exit(1)
 
 

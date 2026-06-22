@@ -807,10 +807,45 @@ def check_gate7_currency(guide_dir: Path, qa: dict, now: datetime) -> GateResult
 
 
 # ---------------------------------------------------------------------------
+# Gate B (opt-in) -- a fresh 2-pass build that emits a clean log.
+# ---------------------------------------------------------------------------
+# audit_gold is otherwise STATIC -- it never compiles the PDF, so a guide with a
+# real LaTeX build-breaker (e.g. a raw ``&`` in a bib author field) can still
+# clear G1-G7. ``--build`` adds this hard gate: it runs ``make ... digital`` and
+# scans ``main_digital.log`` with the shared, file:line:error-aware error regex.
+
+def check_gate_build(guide_dir: Path) -> GateResult:
+    """GB: fresh 2-pass ``make digital`` with a clean ``main_digital.log``."""
+    from tooling.qa.guide_readiness import _LATEX_ERROR_RE
+    guide_sub = guide_dir / "guide"
+    name = "GB: clean 2-pass build"
+    if not (guide_sub / "Makefile").exists() and not (guide_sub / "main.tex").exists():
+        return GateResult(name, False, "no buildable guide/ (Makefile/main.tex missing)")
+    proc = subprocess.run(
+        ["make", "-C", str(guide_sub), "digital"],
+        cwd=str(paths.host_root()), capture_output=True, text=True,
+    )
+    log = guide_sub / "main_digital.log"
+    err_lines = (
+        [ln.strip() for ln in log.read_text(errors="replace").splitlines()
+         if _LATEX_ERROR_RE.match(ln)]
+        if log.exists() else []
+    )
+    if proc.returncode == 0 and not err_lines:
+        return GateResult(name, True, "rc=0; 0 LaTeX errors")
+    parts = [f"rc={proc.returncode}"]
+    if err_lines:
+        parts.append(f"{len(err_lines)} error(s); e.g. {err_lines[0][:70]!r}")
+    elif proc.returncode != 0:
+        parts.append("build rc!=0 (see main_digital.log)")
+    return GateResult(name, False, "; ".join(parts))
+
+
+# ---------------------------------------------------------------------------
 # Orchestration.
 # ---------------------------------------------------------------------------
 
-def audit_guide_gold(guide_dir: Path, now: datetime) -> HonestReport:
+def audit_guide_gold(guide_dir: Path, now: datetime, build: bool = False) -> HonestReport:
     slug = guide_dir.name
     qa = load_guide_qa(guide_dir)
     report = HonestReport(slug=slug)
@@ -823,6 +858,8 @@ def audit_guide_gold(guide_dir: Path, now: datetime) -> HonestReport:
     report.g5_reason = reason
     report.gates.append(check_gate6_dashboard(guide_dir, qa))
     report.gates.append(check_gate7_currency(guide_dir, qa, now))
+    if build:  # opt-in hard gate; audit_gold is static unless --build is passed
+        report.gates.append(check_gate_build(guide_dir))
     return report
 
 
@@ -904,6 +941,9 @@ def main() -> None:
     ap.add_argument("--guide", help="Audit a single guide by slug")
     ap.add_argument("--verbose", action="store_true", help="Per-gate detail for all guides")
     ap.add_argument("--report", action="store_true", help="Write markdown report to reports/")
+    ap.add_argument("--build", action="store_true",
+                    help="Add gate GB: a fresh 2-pass `make digital` with a clean log "
+                         "(audit_gold is static without this). Slow; compiles each guide.")
     args = ap.parse_args()
 
     if args.guide:
@@ -921,7 +961,7 @@ def main() -> None:
     reports = []
     for gd in targets:
         try:
-            reports.append(audit_guide_gold(gd, now))
+            reports.append(audit_guide_gold(gd, now, build=args.build))
         except Exception as exc:  # noqa: BLE001 -- one bad guide must not abort the fleet
             r = HonestReport(slug=gd.name)
             r.gates.append(GateResult("G0: audit error", False, f"{type(exc).__name__}: {exc}"))

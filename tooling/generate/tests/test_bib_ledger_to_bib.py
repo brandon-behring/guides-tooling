@@ -37,7 +37,7 @@ def test_entry_types():
 def test_arxiv_note_and_authors():
     out = render_entry(LEDGER["entries"][0])
     assert "note = {arXiv:1706.03762" in out
-    assert "code: https://github.com/tensorflow/tensor2tensor" in out
+    assert "code: \\url{https://github.com/tensorflow/tensor2tensor}" in out  # URL \url-wrapped
     assert "author = {Vaswani and others}," in out          # "et al." → "and others"
     assert "year = {2017}," in out
     assert "title = {{Attention Is All You Need}}," in out   # double brace protects case
@@ -94,3 +94,53 @@ def test_convert_rejects_debate_ledger(tmp_path):
     )
     with pytest.raises(ValueError, match="entries"):
         convert(gd)
+
+
+# ── LaTeX-safety: author '&' separators, free-text escaping, idempotency ──────
+# Regression coverage for the build-breakers found in Gold-wave 2 (grokking_*):
+# raw ' & ' author separators ("Misplaced alignment tab") and raw URL underscores
+# in a free-text note ("Missing $ inserted").
+
+def test_amp_author_separator_becomes_and():
+    e = {"bibkey": "casella2002", "title": "Statistical Inference",
+         "authors": "George Casella & Roger L. Berger (2002)",
+         "primary_url": "https://example.org/x", "status": "verified", "claim_family": "x"}
+    out = render_entry(e)
+    assert "author = {George Casella and Roger L. Berger}," in out
+    assert " & " not in out                                   # no raw alignment-tab survives
+
+
+def test_bare_ampersand_backstop_escaped():
+    # an author legitimately containing '&' (no surrounding spaces → not a separator)
+    e = {"bibkey": "att1970", "title": "Unix", "authors": "AT&T Bell Labs",
+         "primary_url": "https://example.org/x", "status": "verified", "claim_family": "x"}
+    out = render_entry(e)
+    assert "author = {AT\\&T Bell Labs}," in out
+
+
+def test_already_escaped_venue_not_double_escaped():
+    # idempotency: a ledger venue already carrying \& must stay \& (not \\&)
+    e = {"bibkey": "gelman2013", "title": "Bayesian Data Analysis",
+         "authors": "Gelman and Carlin",
+         "venue": "Chapman \\& Hall/CRC Texts; vol_3",
+         "primary_url": "https://example.org/x", "status": "verified", "claim_family": "x"}
+    out = render_entry(e)
+    assert "Chapman \\& Hall" in out and "\\\\&" not in out    # not double-escaped
+    assert "vol\\_3" in out                                    # bare _ now escaped
+
+
+def test_code_url_underscores_are_url_wrapped():
+    e = {"bibkey": "x2013", "title": "X", "authors": "Y",
+         "primary_url": "https://routledge.com/x", "status": "verified", "claim_family": "x",
+         "code_url": "https://books.google.com/about/Bayesian_Data_Analysis_3e.html"}
+    out = render_entry(e)
+    assert "code: \\url{https://books.google.com/about/Bayesian_Data_Analysis_3e.html}" in out
+
+
+def test_title_ampersand_escaped_math_preserved():
+    e = {"bibkey": "x2020", "title": "Cats & Dogs: $O(n^2)$ Scaling",
+         "authors": "Z", "primary_url": "https://example.org/x",
+         "status": "verified", "claim_family": "x"}
+    out = render_entry(e)
+    assert "Cats \\& Dogs" in out                              # bare & escaped
+    assert "$O(n^2)$" in out                                   # math left intact

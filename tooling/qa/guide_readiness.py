@@ -32,9 +32,15 @@ except ImportError:
 
 # lualatex recovers from many real errors and still emits a PDF, so a build check
 # that only runs "test -f main.pdf" passes despite them. Scan the build log too.
-_LATEX_ERROR_RE = re.compile(
-    r"(?m)^(?:\! .*|.*\.tex:\d+: (?:Missing|Undefined|Extra|Runaway|LaTeX Error|invalid).*)$"
-)
+#
+# Match BOTH error renderings: a column-0 ``! `` line (TeX-native) and any
+# ``file:line: `` message (the ``file:line:error`` style these guides compile
+# with). The earlier keyword-restricted form silently missed "Misplaced
+# alignment tab character &." (a raw-``&`` bib breaker) because that phrase was
+# not in the keyword list -- so match any ``.tex:<n>: `` prefix instead.
+# Validated: 0 false positives across known-clean ``main_digital.log`` files.
+# Captures the whole line so callers can report the full error text.
+_LATEX_ERROR_RE = re.compile(r"(?m)^(?:\! .*|.*\.tex:\d+: .*)$")
 
 
 @dataclass
