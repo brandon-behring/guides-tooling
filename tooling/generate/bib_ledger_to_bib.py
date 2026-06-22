@@ -65,15 +65,31 @@ def _escape_amp(s: str) -> str:
     return re.sub(r"(?<!\\)&", r"\\&", s)
 
 
-def _escape_note(s: str) -> str:
-    r"""Idempotently escape the LaTeX specials common in free-text ``note`` /
-    ``venue`` fields. The ``(?<!\\)`` guard makes it a no-op on already-escaped
-    input (e.g. a ledger ``venue: Chapman \& Hall``). ``$`` / ``^`` / ``~`` are
-    left alone to preserve any intentional math; URLs are ``\url{}``-wrapped at
-    the call site instead, so their underscores never reach here."""
-    for ch in ("&", "%", "#", "_"):
+# Math spans are passed through verbatim so e.g. a title "$x_i$" keeps its
+# subscript while a literal "SHUFFLE_HASH" gets its underscore escaped.
+_MATH_SPAN_RE = re.compile(r"\$[^$]*\$|\\\([^)]*?\\\)|\\\[[^\]]*?\\\]")
+_SPECIALS = ("&", "%", "#", "_")
+
+
+def _escape_specials(s: str) -> str:
+    r"""Idempotently escape ``& % # _`` (``(?<!\\)`` guard → no double-escape)."""
+    for ch in _SPECIALS:
         s = re.sub(r"(?<!\\)" + re.escape(ch), "\\" + ch, s)
     return s
+
+
+def _escape_text(s: str) -> str:
+    r"""Escape LaTeX specials in a free-text field (``title`` / ``venue`` /
+    ``note``) OUTSIDE any ``$...$`` / ``\(..\)`` / ``\[..\]`` math span. Idempotent
+    on already-escaped input. URLs are ``\url{}``-wrapped at the call site so their
+    underscores never reach here. ``$`` / ``^`` / ``~`` are left intact (math)."""
+    out, last = [], 0
+    for m in _MATH_SPAN_RE.finditer(s):
+        out.append(_escape_specials(s[last:m.start()]))
+        out.append(m.group(0))  # math span verbatim
+        last = m.end()
+    out.append(_escape_specials(s[last:]))
+    return "".join(out)
 
 
 def _entry_type(e: dict) -> str:
@@ -110,12 +126,12 @@ def render_entry(e: dict) -> str:
     if au:
         fields.append(("author", au))
     if e.get("title"):
-        # extra braces protect case; _escape_amp guards a bare & (math-safe)
-        fields.append(("title", "{" + _escape_amp(e["title"].strip()) + "}"))
+        # extra braces protect case; _escape_text escapes & _ # % outside math
+        fields.append(("title", "{" + _escape_text(e["title"].strip()) + "}"))
     if btype == "inproceedings" and venue:
-        fields.append(("booktitle", _escape_note(venue)))
+        fields.append(("booktitle", _escape_text(venue)))
     elif btype == "article" and venue and not axid:
-        fields.append(("journal", _escape_note(venue)))
+        fields.append(("journal", _escape_text(venue)))
     # An explicit ledger ``year:`` wins; otherwise derive from venue /
     # published_online. The derivation regex can mis-fire on an arXiv id that
     # leads with a 19xx/20xx-looking prefix (e.g. arXiv:1907.07271 → "1907"),
@@ -131,7 +147,7 @@ def render_entry(e: dict) -> str:
     if axid:
         notes.append(f"arXiv:{axid}")
     if venue and btype == "misc":
-        notes.append(_escape_note(venue))
+        notes.append(_escape_text(venue))
     if e.get("code_url"):
         # \url{} renders the URL safely (underscores etc. need no escaping inside it)
         notes.append("code: \\url{" + e["code_url"].strip() + "}")
@@ -151,6 +167,23 @@ def render_bib(entries: list[dict]) -> str:
     return "\n".join(out)
 
 
+# A regenerated bib is the ledger's. But guides routinely hand-append extra
+# ``@entry`` blocks below it (e.g. the Gold appendix-E/F citation sources that
+# are NOT in the research-gather ledger). Overwriting blindly would silently
+# delete those and turn every E/F \parencite into an undefined-citation build
+# error. So preserve any entry whose bibkey is not in the ledger, below a marker.
+MANUAL_DIVIDER = (
+    "% --- manual entries below (bibkeys not in bib_ledger.yml) are PRESERVED "
+    "across regeneration; move them into the ledger to have them managed ---"
+)
+_ENTRY_RE = re.compile(r"(?ms)^@\w+\{([^,\n]+),.*?^\}$")
+
+
+def _entry_blocks(text: str) -> list[tuple[str, str]]:
+    """(bibkey, full ``@entry`` block) for each entry in a .bib, in file order."""
+    return [(m.group(1).strip(), m.group(0)) for m in _ENTRY_RE.finditer(text)]
+
+
 def convert(guide_dir: Path, force: bool = False) -> str:
     ledger = guide_dir / "review" / "research" / "bib_ledger.yml"
     bib = guide_dir / "guide" / "references.bib"
@@ -161,6 +194,8 @@ def convert(guide_dir: Path, force: bool = False) -> str:
             f"{ledger}: no 'entries:' list (research-gather schema required; "
             f"hand-curated 'sources:' debate ledgers are not convertible)"
         )
+    ledger_keys = {str(e.get("bibkey", "")).strip() for e in entries}
+    orphans: list[str] = []
     if bib.exists():
         existing = bib.read_text(encoding="utf-8")
         has_real_entries = bool(re.search(r"(?m)^@\w+\{", existing))
@@ -171,8 +206,15 @@ def convert(guide_dir: Path, force: bool = False) -> str:
                 f"{bib} is hand-authored (has @ entries, no GENERATED sentinel); "
                 f"rerun with --force to overwrite"
             )
+        orphans = [block for key, block in _entry_blocks(existing) if key not in ledger_keys]
+    rendered = render_bib(entries)  # ends "...lastentry\n"
+    if orphans:
+        text = (rendered.rstrip("\n") + "\n\n" + MANUAL_DIVIDER + "\n\n"
+                + "\n\n".join(orphans) + "\n")
+    else:
+        text = rendered + "\n"  # preserve the original "...lastentry\n\n" trailing
     bib.parent.mkdir(parents=True, exist_ok=True)
-    bib.write_text(render_bib(entries) + "\n", encoding="utf-8")
+    bib.write_text(text, encoding="utf-8")
     return str(bib)
 
 

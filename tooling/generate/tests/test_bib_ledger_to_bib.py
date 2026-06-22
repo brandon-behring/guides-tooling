@@ -144,3 +144,61 @@ def test_title_ampersand_escaped_math_preserved():
     out = render_entry(e)
     assert "Cats \\& Dogs" in out                              # bare & escaped
     assert "$O(n^2)$" in out                                   # math left intact
+
+
+def test_title_underscore_escaped_outside_math():
+    # the SHUFFLE_HASH case: a literal config-name underscore in a title breaks
+    # the build ("Missing $"); escape it, but keep a real math subscript intact.
+    e = {"bibkey": "spark2021", "title": "Spark hints: SHUFFLE_HASH and $x_i$ scaling",
+         "authors": "Z", "primary_url": "https://example.org/x",
+         "status": "verified", "claim_family": "x"}
+    out = render_entry(e)
+    assert "SHUFFLE\\_HASH" in out                             # literal _ escaped
+    assert "$x_i$" in out                                      # math subscript intact
+
+
+# ── hand-appended (orphan) entry preservation ────────────────────────────────
+# Guides append Gold E/F citation sources below the generated block; regenerating
+# must NOT delete them (else every E/F \parencite becomes an undefined citation).
+
+_MANUAL = (
+    "\n% --- Gold appendix E/F sources (hand-added) ---\n"
+    "@book{huang2026manual,\n"
+    "  author = {Eli Huang},\n"
+    "  title = {Some Hand-Added Book},\n"
+    "  howpublished = {Manning},\n"
+    "  urldate = {2026-06-22},\n"
+    "}\n"
+)
+
+
+def test_regenerate_preserves_manual_entries(tmp_path):
+    gd = _make_guide(tmp_path)
+    bib = gd / "guide" / "references.bib"
+    convert(gd)                                                # generate the ledger part
+    bib.write_text(bib.read_text() + _MANUAL)                 # hand-append a manual entry
+    convert(gd)                                                # regenerate
+    out = bib.read_text()
+    assert "@book{huang2026manual," in out                    # manual entry survives
+    assert "howpublished = {Manning}" in out                  # incl. generator-foreign fields
+    assert "PRESERVED" in out                                 # the divider is present
+    assert out.count("@") == 5                                # 4 ledger + 1 manual
+
+
+def test_manual_preservation_is_idempotent(tmp_path):
+    gd = _make_guide(tmp_path)
+    bib = gd / "guide" / "references.bib"
+    convert(gd)
+    bib.write_text(bib.read_text() + _MANUAL)
+    convert(gd)
+    once = bib.read_text()
+    convert(gd)                                                # re-run
+    assert bib.read_text() == once                            # byte-identical
+
+
+def test_no_orphans_means_no_divider(tmp_path):
+    gd = _make_guide(tmp_path)
+    convert(gd)
+    out = (gd / "guide" / "references.bib").read_text()
+    assert "PRESERVED" not in out                             # no spurious divider
+    assert out.endswith("\n")
