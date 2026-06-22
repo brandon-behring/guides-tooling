@@ -450,6 +450,8 @@ def main() -> None:
     parser.add_argument("--all", action="store_true", help="Audit all guides")
     parser.add_argument("--guide", type=str, help="Single guide slug")
     parser.add_argument("--json", action="store_true", help="JSON output")
+    parser.add_argument("--strict", "--check", dest="strict", action="store_true",
+                        help="exit 1 if any audited guide is margin density/quality RED")
     parser.add_argument("--repo-root", type=str, default=None)
     args = parser.parse_args()
 
@@ -479,6 +481,19 @@ def main() -> None:
         print(json.dumps(to_json(results), indent=2))
     else:
         print_dashboard(results)
+
+    # --strict: a RED density (too sparse) or RED quality (too many generic /
+    # over-length / split-attention notes) is a Gold-blocking failure. Gated
+    # behind --strict so the default advisory run (and audit_gold's current
+    # advisory invocation) is unaffected. FAIL goes to stderr to keep --json
+    # stdout parseable; exit 1 is what audit_gold G2 keys on.
+    if args.strict:
+        red = [g for g in results if g.density_status == "RED" or g.quality_status == "RED"]
+        for g in red:
+            flags = [s for s, st in (("density", g.density_status), ("quality", g.quality_status)) if st == "RED"]
+            print(f"FAIL  {g.slug}: margin {'+'.join(flags)} RED", file=sys.stderr)
+        if red:
+            sys.exit(1)
 
 
 if __name__ == "__main__":

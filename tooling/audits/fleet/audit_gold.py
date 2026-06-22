@@ -89,10 +89,16 @@ REPORTS_DIR = paths.host_root() / "reports"
 # its OWN failure condition (empty = no strict flag needed). check_gate2 treats
 # a failure as any non-zero exit OR a leading "FAIL" line, so all ten run
 # uniformly: crossref_quality exits 1 on broken refs; card_presentation prints
-# "FAIL" and exits 0; the --strict/--check audits exit non-zero on failure;
-# margin_quality and term_consistency expose no pass/fail gate today (so they
-# pass on a valid guide) but are still run so a future FAIL line is caught
-# rather than silently skipped.
+# "FAIL" and exits 0; the --strict/--check audits exit non-zero on failure.
+#
+# T2b: margin_quality and term_consistency now EXPOSE a --strict gate (margin =
+# density/quality RED; term = within-guide duplicate definitions). They are
+# deliberately still run WITHOUT --strict here -- activating the gate today would
+# regress 4 of the 5 live Gold guides (ai_model_evaluation + docker_in_action_2e
+# are margin-RED; nlp_in_action + llms_in_production carry within-guide term
+# dupes), which is a content-remediation / threshold-calibration decision, not a
+# tooling toggle. Flip these two to ["--strict"] once that pass lands. They are
+# still invoked (flagless) so a future leading "FAIL" line is caught, not skipped.
 TEN_AUDITS: dict[str, list[str]] = {
     "audit_atomicity": ["--check"],
     "audit_card_presentation": [],          # FAIL via ^FAIL line; exits 0
@@ -100,10 +106,10 @@ TEN_AUDITS: dict[str, list[str]] = {
     "audit_content_freshness": ["--strict"],
     "audit_content_quality": ["--strict"],
     "audit_crossref_quality": [],           # exits 1 on broken refs
-    "audit_margin_quality": [],             # no binary gate today
+    "audit_margin_quality": [],             # --strict exists (T2b); not gated yet
     "audit_retrieval_coverage": ["--strict"],
     "audit_solution_quality": ["--strict"],
-    "audit_term_consistency": [],           # no binary gate today
+    "audit_term_consistency": [],           # --strict exists (T2b); not gated yet
 }
 
 RETRIEVAL_RE = re.compile(r"coverage\s+([\d.]+)%", re.IGNORECASE)
