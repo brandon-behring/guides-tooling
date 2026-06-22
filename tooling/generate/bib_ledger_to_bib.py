@@ -111,8 +111,17 @@ def _authors(a: str | None) -> str | None:
         return None
     a = re.sub(r"\s*\((?:19|20)\d{2}\)\s*$", "", a.strip()).strip()  # drop trailing "(2021)"
     a = a.replace(" & ", " and ")  # biblatex needs ' and ' between authors; raw & = align tab
-    if re.search(r"\bet\s+al\.?$", a, re.IGNORECASE):
-        a = re.sub(r"\s*,?\s*et\s+al\.?$", "", a, flags=re.IGNORECASE).strip() + " and others"
+    et_al = bool(re.search(r"\bet\s+al\.?$", a, re.IGNORECASE))
+    if et_al:
+        a = re.sub(r"\s*,?\s*et\s+al\.?$", "", a, flags=re.IGNORECASE).strip()
+    # A comma-separated author LIST ("A, B, C") is what biber rejects with
+    # "too many commas, skipping entry". >=2 commas is unambiguously a list →
+    # join with ' and '. A single "Last, First" (1 comma) is valid biblatex and
+    # is left untouched. (Skip if ' and ' is already present — mixed/normalised.)
+    if " and " not in a and a.count(",") >= 2:
+        a = a.replace(", ", " and ")
+    if et_al:
+        a = (a + " and others") if a else "others"
     return _escape_amp(a)  # backstop for any remaining bare & (e.g. "AT&T")
 
 

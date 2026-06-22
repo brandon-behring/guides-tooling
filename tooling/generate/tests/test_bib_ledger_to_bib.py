@@ -110,6 +110,24 @@ def test_amp_author_separator_becomes_and():
     assert " & " not in out                                   # no raw alignment-tab survives
 
 
+def test_comma_separated_author_list_becomes_and():
+    # biber rejects ">=2 commas" author fields; the ledger uses comma lists.
+    e = {"bibkey": "cho2014", "title": "RNN Encoder-Decoder",
+         "authors": "Kyunghyun Cho, Bart van Merrienboer, Caglar Gulcehre, Yoshua Bengio",
+         "primary_url": "https://example.org/x", "status": "verified", "claim_family": "x"}
+    out = render_entry(e)
+    assert "author = {Kyunghyun Cho and Bart van Merrienboer and Caglar Gulcehre and Yoshua Bengio}," in out
+    assert ", " not in out.split("author = {")[1].split("}")[0]   # no comma survives in author
+
+
+def test_single_last_first_author_kept():
+    # exactly one comma = valid "Last, First" biblatex; must NOT be split
+    e = {"bibkey": "knuth1997", "title": "TAOCP", "authors": "Knuth, Donald E.",
+         "primary_url": "https://example.org/x", "status": "verified", "claim_family": "x"}
+    out = render_entry(e)
+    assert "author = {Knuth, Donald E.}," in out
+
+
 def test_bare_ampersand_backstop_escaped():
     # an author legitimately containing '&' (no surrounding spaces → not a separator)
     e = {"bibkey": "att1970", "title": "Unix", "authors": "AT&T Bell Labs",
