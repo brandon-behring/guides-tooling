@@ -98,7 +98,13 @@ def render_entry(e: dict) -> str:
         fields.append(("booktitle", venue))
     elif btype == "article" and venue and not axid:
         fields.append(("journal", venue))
-    yr = _year(venue, str(e.get("published_online") or ""))
+    # An explicit ledger ``year:`` wins; otherwise derive from venue /
+    # published_online. The derivation regex can mis-fire on an arXiv id that
+    # leads with a 19xx/20xx-looking prefix (e.g. arXiv:1907.07271 → "1907"),
+    # so the explicit field is the documented override for those cases.
+    yr = str(e["year"]) if e.get("year") is not None else _year(
+        venue, str(e.get("published_online") or "")
+    )
     if yr:
         fields.append(("year", yr))
     if e.get("primary_url"):
