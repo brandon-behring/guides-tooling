@@ -154,6 +154,10 @@ E_FILENAME = "E_post_course_updates.tex"
 F_FILENAME = "F_contrasting_opinions_open_debates.tex"
 G7_MIN_CURRENCY_ITEMS = 3
 G7_MIN_DEBATES = 3
+# F citation floor: a contested debate is only honest if its Positions are cited.
+# Enforce max(G7_F_CITE_FLOOR, 2 x debates) resolvable citation markers across the
+# (comment-stripped) appendix, so verdict flags alone cannot pass an uncited F.
+G7_F_CITE_FLOOR = 6
 # A stub E: "No significant {breaking changes / best-practice shifts / ...}
 # identified yet" and the like. Substantive change items still naming a surface
 # do not match because of the trailing "yet".
@@ -181,6 +185,24 @@ SUBSECTION_RE = re.compile(r"^\s*\\(?:subsection|paragraph)\*?\{", re.MULTILINE)
 # sits..." once, which would otherwise inflate the debate count by 1.
 WHERE_BOOK_RE = re.compile(r"(?i)\\textbf\{[^}]*?where\s+(?:this|the)\s+book\s+sits")
 VERDICT_RE = re.compile(r"(?i)(well[-\s]supported|contested|dated)")
+# Resolvable citation markers (same family as the epilogue gate): a biblatex cite
+# command, an arXiv id, a DOI, or an http(s) permalink. Counted on comment-stripped
+# text so a fresh scaffold's commented example-cites do not satisfy the floor.
+F_CITE_RES = (
+    re.compile(r"\\(?:parencite|cite|footcite|textcite|autocite|href)\b"),
+    re.compile(r"\b\d{4}\.\d{4,5}\b"),       # arXiv id
+    re.compile(r"10\.\d{4,}/\S+"),            # DOI
+    re.compile(r"https?://"),                 # permalink
+)
+
+
+def _strip_tex_comments(text: str) -> str:
+    """Drop full-line and trailing TeX comments (ignoring escaped ``\\%``)."""
+    out = []
+    for line in text.splitlines():
+        m = re.search(r"(?<!\\)%", line)
+        out.append(line[: m.start()] if m else line)
+    return "\n".join(out)
 
 VELOCITY_MAX_AGE_MONTHS = {"fast": 6, "medium": 12, "slow": 18}
 SHELF_VELOCITY = {
@@ -752,6 +774,12 @@ def _check_f_appendix(guide_dir: Path, qa: dict) -> list[str]:
         issues.append(f"<{G7_MIN_DEBATES} debates ({debates})")
     if len(VERDICT_RE.findall(text)) < G7_MIN_DEBATES:
         issues.append("missing verdict flags (well-supported/contested/dated)")
+    # Cited-Contested: every debate's Positions must carry resolvable citations.
+    live = _strip_tex_comments(text)
+    cites = sum(len(rx.findall(live)) for rx in F_CITE_RES)
+    cite_floor = max(G7_F_CITE_FLOOR, 2 * debates)
+    if cites < cite_floor:
+        issues.append(f"<{cite_floor} resolvable citations ({cites})")
     return issues
 
 
