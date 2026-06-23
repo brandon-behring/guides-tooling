@@ -12,7 +12,7 @@ is brought up to the 7-gate Gold definition in
 ``tooling/standards/tier_model.md``:
 
   G1  retrieval coverage (100%) + zero checkpoint stubs.
-  G2  **11**-audit clean: the ten binary audits emit no failure, AND
+  G2  **12**-audit clean: the eleven binary audits emit no failure, AND
       ``back_content`` reports zero CRITICAL and zero HIGH (MEDIUM/INFO advisory).
   G3  built per-chapter decks (>= max(2, chapters-1)) + a complete deck + an
       ``anki.course_map`` covering every module; waiver ``decks_complete_only``.
@@ -83,9 +83,9 @@ from tooling import discovery, layout, paths
 REPORTS_DIR = paths.host_root() / "reports"
 
 # ---------------------------------------------------------------------------
-# G2 -- the eleven gated audits.
+# G2 -- the twelve gated audits.
 # ---------------------------------------------------------------------------
-# The ten binary audits, each mapped to the flag that makes it exit non-zero on
+# The eleven binary audits, each mapped to the flag that makes it exit non-zero on
 # its OWN failure condition (empty = no strict flag needed). check_gate2 treats
 # a failure as any non-zero exit OR a leading "FAIL" line, so all ten run
 # uniformly: crossref_quality exits 1 on broken refs; card_presentation prints
@@ -103,10 +103,12 @@ TEN_AUDITS: dict[str, list[str]] = {
     "audit_atomicity": ["--check"],
     "audit_card_presentation": [],          # FAIL via ^FAIL line; exits 0
     "audit_card_quality": ["--strict"],
+    "audit_checkpoint_bloom_verbs": ["--strict"],  # gated: 0 duplicated-verb LOS
     "audit_content_freshness": ["--strict"],
     "audit_content_quality": ["--strict"],
     "audit_crossref_quality": [],           # exits 1 on broken refs
-    "audit_margin_quality": [],             # --strict exists (T2b); not gated yet
+    "audit_margin_quality": ["--strict-templates"],  # gated: 0 content-free templated
+                                            # margins (density/quality --strict still T2b)
     "audit_retrieval_coverage": ["--strict"],
     "audit_solution_quality": ["--strict"],
     "audit_term_consistency": [],           # --strict exists (T2b); not gated yet
@@ -441,7 +443,7 @@ def check_gate1_retrieval(slug: str, guide_dir: Path) -> GateResult:
 
 
 # ---------------------------------------------------------------------------
-# Gate 2 -- 11-audit clean.
+# Gate 2 -- 12-audit clean.
 # ---------------------------------------------------------------------------
 
 def check_gate2_audits(slug: str) -> GateResult:
@@ -459,7 +461,7 @@ def check_gate2_audits(slug: str) -> GateResult:
                     break
             failures.append(f"{module}{snippet}")
 
-    # 11th audit: back_content gates on CRITICAL + HIGH == 0.
+    # 12th audit: back_content gates on CRITICAL + HIGH == 0.
     sev = run_back_content(slug)
     if sev is None:
         failures.append("back_content: no JSON output")
@@ -469,8 +471,8 @@ def check_gate2_audits(slug: str) -> GateResult:
             failures.append(f"back_content: {crit} CRITICAL / {high} HIGH")
 
     if not failures:
-        return GateResult("G2: 11-audit clean (zero FAIL)", True, "all 11 clean")
-    return GateResult("G2: 11-audit clean (zero FAIL)", False,
+        return GateResult("G2: 12-audit clean (zero FAIL)", True, "all 12 clean")
+    return GateResult("G2: 12-audit clean (zero FAIL)", False,
                       f"{len(failures)} failing: " + "; ".join(failures[:3]))
 
 
