@@ -99,7 +99,7 @@ REPORTS_DIR = paths.host_root() / "reports"
 # dupes), which is a content-remediation / threshold-calibration decision, not a
 # tooling toggle. Flip these two to ["--strict"] once that pass lands. They are
 # still invoked (flagless) so a future leading "FAIL" line is caught, not skipped.
-TEN_AUDITS: dict[str, list[str]] = {
+GUIDE_AUDITS: dict[str, list[str]] = {
     "audit_atomicity": ["--check"],
     "audit_box_styles": ["--strict"],       # gated: every used tcolorbox style is defined
     "audit_card_presentation": [],          # FAIL via ^FAIL line; exits 0
@@ -449,7 +449,7 @@ def check_gate1_retrieval(slug: str, guide_dir: Path) -> GateResult:
 
 def check_gate2_audits(slug: str) -> GateResult:
     failures: list[str] = []
-    for module, flags in TEN_AUDITS.items():
+    for module, flags in GUIDE_AUDITS.items():
         code, out = run_guide_audit(module, slug, flags)
         if NOT_FOUND_RE.search(out):
             failures.append(f"{module}: not in audit scope")
@@ -817,8 +817,20 @@ def check_gate7_currency(guide_dir: Path, qa: dict, now: datetime) -> GateResult
 # clear G1-G7. ``--build`` adds this hard gate: it runs ``make ... digital`` and
 # scans ``main_digital.log`` with the shared, file:line:error-aware error regex.
 
+# Undefined cites/refs are reported as WARNINGS in the .log (not file:line errors)
+# and a failed biber run is logged to .blg, not the .log -- and many guide
+# Makefiles ``-``-prefix biber/lualatex so ``make`` can exit 0 anyway. So GB must
+# scan for these too, not just LaTeX errors + the make return code.
+_UNDEF_CITE_RE = re.compile(
+    r"(?i)(?:undefined (?:reference|citation)|citation `[^']*' (?:on page .* )?undefined"
+    r"|there were undefined (?:references|citations))")
+_BIBER_ERR_RE = re.compile(r"> (?:ERROR|FATAL) -|skipping entry")
+
+
 def check_gate_build(guide_dir: Path) -> GateResult:
-    """GB: fresh 2-pass ``make digital`` with a clean ``main_digital.log``."""
+    """GB: fresh 2-pass ``make digital`` with a clean log (LaTeX errors, undefined
+    cites/refs, and biber errors all fail it -- a non-zero make rc is not required
+    because guide Makefiles may ``-``-ignore the underlying tool's exit code)."""
     from tooling.qa.guide_readiness import _LATEX_ERROR_RE
     guide_sub = guide_dir / "guide"
     name = "GB: clean 2-pass build"
@@ -829,17 +841,21 @@ def check_gate_build(guide_dir: Path) -> GateResult:
         cwd=str(paths.host_root()), capture_output=True, text=True,
     )
     log = guide_sub / "main_digital.log"
-    err_lines = (
-        [ln.strip() for ln in log.read_text(errors="replace").splitlines()
-         if _LATEX_ERROR_RE.match(ln)]
-        if log.exists() else []
-    )
-    if proc.returncode == 0 and not err_lines:
-        return GateResult(name, True, "rc=0; 0 LaTeX errors")
+    log_text = log.read_text(errors="replace") if log.exists() else ""
+    err_lines = [ln.strip() for ln in log_text.splitlines() if _LATEX_ERROR_RE.match(ln)]
+    undef = bool(_UNDEF_CITE_RE.search(log_text))
+    blg = guide_sub / "main_digital.blg"
+    biber_err = bool(blg.exists() and _BIBER_ERR_RE.search(blg.read_text(errors="replace")))
+    if proc.returncode == 0 and not err_lines and not undef and not biber_err:
+        return GateResult(name, True, "rc=0; 0 LaTeX errors; cites + biber clean")
     parts = [f"rc={proc.returncode}"]
     if err_lines:
-        parts.append(f"{len(err_lines)} error(s); e.g. {err_lines[0][:70]!r}")
-    elif proc.returncode != 0:
+        parts.append(f"{len(err_lines)} LaTeX error(s); e.g. {err_lines[0][:60]!r}")
+    if undef:
+        parts.append("undefined reference/citation in log")
+    if biber_err:
+        parts.append("biber ERROR in .blg (failed/skipped entry)")
+    if proc.returncode != 0 and not (err_lines or undef or biber_err):
         parts.append("build rc!=0 (see main_digital.log)")
     return GateResult(name, False, "; ".join(parts))
 
@@ -926,14 +942,23 @@ def write_markdown_report(reports: list[HonestReport], meta: dict[str, str]) -> 
         f"{counts['GOLD-ELIGIBLE']} GOLD-ELIGIBLE / {counts['FAIL']} FAIL "
         f"(total {sum(counts.values())})",
         "",
-        "| Guide | Class | G1 | G2 | G3 | G4 | G5 | G6 | G7 |",
-        "|-------|-------|----|----|----|----|----|----|----|",
     ]
+    # Columns = the gate short-names seen across reports (G1..G7, plus GB when
+    # --build is used), keyed by name so no gate (e.g. GB) is silently dropped.
+    def _short(g: GateResult) -> str:
+        return g.name.split(":", 1)[0]
+    cols: list[str] = []
     for r in reports:
-        # Pad/truncate to 7 gate cells so an error row (a single "G0" gate) still
-        # fills the 7-column table rather than producing a ragged 3-cell row.
-        cells = [("PASS" if g.passed else "FAIL") for g in r.gates]
-        cells = (cells + ["—"] * 7)[:7]
+        for g in r.gates:
+            s = _short(g)
+            if s not in cols and s != "G0":
+                cols.append(s)
+    cols = cols or ["G1"]
+    lines.append("| Guide | Class | " + " | ".join(cols) + " |")
+    lines.append("|" + "----|" * (2 + len(cols)))
+    for r in reports:
+        by = {_short(g): ("PASS" if g.passed else "FAIL") for g in r.gates}
+        cells = [by.get(c, "—") for c in cols]
         lines.append("| " + " | ".join([r.slug, r.classification, *cells]) + " |")
     path.write_text("\n".join(lines) + "\n")
     return path

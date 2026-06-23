@@ -66,29 +66,41 @@ def _escape_amp(s: str) -> str:
 
 
 # Math spans are passed through verbatim so e.g. a title "$x_i$" keeps its
-# subscript while a literal "SHUFFLE_HASH" gets its underscore escaped.
-_MATH_SPAN_RE = re.compile(r"\$[^$]*\$|\\\([^)]*?\\\)|\\\[[^\]]*?\\\]")
+# subscript while a literal "SHUFFLE_HASH" gets its underscore escaped. The
+# delimiter forms (\(..\) / \[..\]) are unambiguous and use .*? to the real
+# closing token (NOT [^)]/[^]] which break on an internal ) or ]). The $...$ form
+# is only treated as math when the unescaped-$ count is EVEN; an odd count cannot
+# be valid paired math, so every $ is escaped as a literal instead.
+_MATH_DELIM_RE = re.compile(r"\\\(.*?\\\)|\\\[.*?\\\]", re.DOTALL)
+_MATH_FULL_RE = re.compile(r"\$[^$]*\$|\\\(.*?\\\)|\\\[.*?\\\]", re.DOTALL)
+_UNESCAPED_DOLLAR_RE = re.compile(r"(?<!\\)\$")
 _SPECIALS = ("&", "%", "#", "_")
 
 
-def _escape_specials(s: str) -> str:
-    r"""Idempotently escape ``& % # _`` (``(?<!\\)`` guard → no double-escape)."""
-    for ch in _SPECIALS:
+def _escape_specials(s: str, chars: tuple[str, ...] = _SPECIALS) -> str:
+    r"""Idempotently escape each of ``chars`` (``(?<!\\)`` guard → no double-escape)."""
+    for ch in chars:
         s = re.sub(r"(?<!\\)" + re.escape(ch), "\\" + ch, s)
     return s
 
 
 def _escape_text(s: str) -> str:
     r"""Escape LaTeX specials in a free-text field (``title`` / ``venue`` /
-    ``note``) OUTSIDE any ``$...$`` / ``\(..\)`` / ``\[..\]`` math span. Idempotent
-    on already-escaped input. URLs are ``\url{}``-wrapped at the call site so their
-    underscores never reach here. ``$`` / ``^`` / ``~`` are left intact (math)."""
+    ``note``) OUTSIDE math. Idempotent on already-escaped input. URLs are
+    ``\url{}``-wrapped at the call site so their underscores never reach here.
+    A balanced ``$...$`` is preserved (real math like ``$x_i$``); a lone/odd ``$``
+    is escaped as a literal (a price). Known edge: two literal ``$`` with text
+    between them are treated as a math pair (rare; the fleet writes ``\$`` for
+    literal dollars)."""
+    even_dollars = len(_UNESCAPED_DOLLAR_RE.findall(s)) % 2 == 0
+    span_re = _MATH_FULL_RE if even_dollars else _MATH_DELIM_RE
+    chars = _SPECIALS if even_dollars else _SPECIALS + ("$",)
     out, last = [], 0
-    for m in _MATH_SPAN_RE.finditer(s):
-        out.append(_escape_specials(s[last:m.start()]))
+    for m in span_re.finditer(s):
+        out.append(_escape_specials(s[last:m.start()], chars))
         out.append(m.group(0))  # math span verbatim
         last = m.end()
-    out.append(_escape_specials(s[last:]))
+    out.append(_escape_specials(s[last:], chars))
     return "".join(out)
 
 
@@ -114,12 +126,17 @@ def _authors(a: str | None) -> str | None:
     et_al = bool(re.search(r"\bet\s+al\.?$", a, re.IGNORECASE))
     if et_al:
         a = re.sub(r"\s*,?\s*et\s+al\.?$", "", a, flags=re.IGNORECASE).strip()
-    # A comma-separated author LIST ("A, B, C") is what biber rejects with
-    # "too many commas, skipping entry". >=2 commas is unambiguously a list →
-    # join with ' and '. A single "Last, First" (1 comma) is valid biblatex and
-    # is left untouched. (Skip if ' and ' is already present — mixed/normalised.)
-    if " and " not in a and a.count(",") >= 2:
-        a = a.replace(", ", " and ")
+    # A comma-separated list of FULL "First Last" names is what biber rejects as
+    # "too many commas". Split on commas ONLY when EVERY comma token is multi-word
+    # — so a single "Last, First" and a "Last, Suffix, First" / "von Last, Jr,
+    # First" name are preserved (their tokens include single words), while a real
+    # "First Last, First Last[, ...]" list (every token a 2+-word name) is joined
+    # with ' and '. An ambiguous "Last, First, Last, First" list is left for the
+    # author to disambiguate rather than silently shredded into phantom authors.
+    if " and " not in a and "," in a:
+        toks = [t.strip() for t in a.split(",") if t.strip()]
+        if len(toks) >= 2 and all(" " in t for t in toks):
+            a = " and ".join(toks)
     if et_al:
         a = (a + " and others") if a else "others"
     return _escape_amp(a)  # backstop for any remaining bare & (e.g. "AT&T")
@@ -185,12 +202,36 @@ MANUAL_DIVIDER = (
     "% --- manual entries below (bibkeys not in bib_ledger.yml) are PRESERVED "
     "across regeneration; move them into the ledger to have them managed ---"
 )
-_ENTRY_RE = re.compile(r"(?ms)^@\w+\{([^,\n]+),.*?^\}$")
+_ENTRY_START_RE = re.compile(r"@\w+\{([^,\n]+),")
 
 
 def _entry_blocks(text: str) -> list[tuple[str, str]]:
-    """(bibkey, full ``@entry`` block) for each entry in a .bib, in file order."""
-    return [(m.group(1).strip(), m.group(0)) for m in _ENTRY_RE.finditer(text)]
+    """(bibkey, full ``@entry`` block) for each entry in a .bib, in file order.
+
+    Brace-aware: walks from each ``@type{key,`` to its matching close brace so a
+    multi-line braced field (e.g. a long abstract with ``}`` on its own line) or
+    an indented final ``}`` does not truncate / drop the entry — the regex form
+    ``.*?^\\}$`` did both, silently losing hand-appended manual entries."""
+    out: list[tuple[str, str]] = []
+    pos = 0
+    while True:
+        m = _ENTRY_START_RE.search(text, pos)
+        if not m:
+            return out
+        start = m.start()
+        depth, j = 0, text.index("{", start)  # the '{' right after @type
+        while j < len(text):
+            c = text[j]
+            if c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    j += 1
+                    break
+            j += 1
+        out.append((m.group(1).strip(), text[start:j]))
+        pos = j
 
 
 def convert(guide_dir: Path, force: bool = False) -> str:

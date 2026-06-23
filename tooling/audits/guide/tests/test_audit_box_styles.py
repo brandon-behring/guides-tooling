@@ -39,6 +39,26 @@ def test_defined_style_not_flagged(tmp_path, monkeypatch):
     assert m.find_undefined_box_styles(gd) == []
 
 
+def test_multi_style_tcbset_all_captured():
+    # both styles in one \tcbset{...} block must be recognized as defined
+    assert m._styles_in(r"\tcbset{ a/.style={}, b/.style={} }") == {"a", "b"}
+
+
+def test_commented_out_use_not_flagged(tmp_path, monkeypatch):
+    monkeypatch.setattr(m, "_shared_styles", lambda: frozenset())
+    monkeypatch.setattr(m, "_universe", lambda: frozenset({"debugbox"}))
+    gd = _mk(tmp_path, "% \\begin{tcolorbox}[debugbox, title=Gotcha]\ntext", sty="")
+    assert m.find_undefined_box_styles(gd) == []      # commented example → not a real use
+
+
+def test_style_after_nested_bracket_seen(tmp_path, monkeypatch):
+    monkeypatch.setattr(m, "_shared_styles", lambda: frozenset())
+    monkeypatch.setattr(m, "_universe", lambda: frozenset({"narrativebox"}))
+    gd = _mk(tmp_path, r"\begin{tcolorbox}[title={Array A[i]}, narrativebox]q\end{tcolorbox}",
+             sty="")  # narrativebox undefined and must still be DETECTED past the nested ]
+    assert m.find_undefined_box_styles(gd) == ["narrativebox"]
+
+
 def test_builtin_bare_key_ignored(tmp_path, monkeypatch):
     # 'breakable' is a tcolorbox built-in (not in the custom-style universe) → never flagged,
     # even when it leads the option list before the real custom style.

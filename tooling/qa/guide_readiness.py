@@ -38,9 +38,12 @@ except ImportError:
 # with). The earlier keyword-restricted form silently missed "Misplaced
 # alignment tab character &." (a raw-``&`` bib breaker) because that phrase was
 # not in the keyword list -- so match any ``.tex:<n>: `` prefix instead.
-# Validated: 0 false positives across known-clean ``main_digital.log`` files.
-# Captures the whole line so callers can report the full error text.
-_LATEX_ERROR_RE = re.compile(r"(?m)^(?:\! .*|.*\.tex:\d+: .*)$")
+# The file:line arm anchors the PATH at the start of the line (not ``.*`` before
+# it) so a benign typeout/Info line that merely embeds a ``foo.tex:NN:`` location
+# (e.g. ``Package x Info: chapters/01.tex:12: ...``) is NOT matched — only a true
+# ``file:line:error``-style line, which lualatex emits starting with the path.
+# Validated: 0 false positives across all clean ``main_digital.log`` files.
+_LATEX_ERROR_RE = re.compile(r"(?m)^(?:\! .*|[^\s:]*\.tex:\d+: .*)$")
 
 
 @dataclass

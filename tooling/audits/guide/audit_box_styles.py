@@ -34,21 +34,26 @@ from pathlib import Path
 from tooling import discovery, paths
 from tooling.audits.guide._guide_scope import guide_dir_for_slug
 
-# A custom style is defined via \tcbset{NAME/.style={...}} or \newtcolorbox{NAME}.
-_DEF_RE = re.compile(r"\\(?:tcbset\{\s*|newtcolorbox\{)([a-zA-Z][a-zA-Z0-9]*)(?:/\.style|\})")
-# Capture the full option list of each \begin{tcolorbox}[...].
-_BEGIN_RE = re.compile(r"\\begin\{tcolorbox\}\[([^\]]*)\]", re.DOTALL)
+# A custom style is defined via <NAME>/.style={...} (anywhere — a single
+# \tcbset{} may define several, comma-separated) or \newtcolorbox{NAME}.
+_DEF_RE = re.compile(r"([a-zA-Z][a-zA-Z0-9]*)/\.style\b|\\newtcolorbox\{([a-zA-Z][a-zA-Z0-9]*)\}")
+# The option list of each \begin{tcolorbox}[...]; a {..} group is consumed whole
+# so a ] inside e.g. title={Array A[i]} does not truncate the option scan.
+_BEGIN_RE = re.compile(r"\\begin\{tcolorbox\}\[((?:\{[^{}]*\}|[^\]])*)\]", re.DOTALL)
 # A bare option token (a style name, not a key=value built-in).
 _BARE_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9]*$")
+# Strip a LaTeX line comment (% to end of line, but not an escaped \%), so a
+# commented-out \begin{tcolorbox}[...] example is not scanned as a real use.
+_COMMENT_RE = re.compile(r"(?<!\\)%.*")
 
 
 def _styles_in(text: str) -> set[str]:
-    return set(_DEF_RE.findall(text))
+    return {a or b for a, b in _DEF_RE.findall(text)}
 
 
 def _read(p: Path) -> str:
     try:
-        return p.read_text(encoding="utf-8", errors="ignore")
+        return _COMMENT_RE.sub("", p.read_text(encoding="utf-8", errors="ignore"))
     except OSError:
         return ""
 

@@ -128,6 +128,67 @@ def test_single_last_first_author_kept():
     assert "author = {Knuth, Donald E.}," in out
 
 
+# Adversarial-review regressions (comma rule must only split all-multi-word lists):
+
+def _author(authors):
+    return render_entry({"bibkey": "x", "title": "t", "authors": authors,
+                         "primary_url": "https://e.org/x", "status": "v", "claim_family": "c"})
+
+
+def test_last_first_multiauthor_not_shredded():
+    # "Last, First, Last, First" (single-word tokens) must NOT become 4 authors
+    out = _author("Vaswani, Ashish, Shazeer, Noam")
+    assert " and " not in out.split("author = {")[1].split("}")[0]
+
+
+def test_suffix_name_not_split():
+    for nm in ("de la Cruz, Jr, Juan", "King, Martin Luther, Jr."):
+        out = _author(nm)
+        assert f"author = {{{nm}}}," in out          # preserved verbatim, no ' and '
+
+
+def test_full_name_list_still_splits():
+    out = _author("Kyunghyun Cho, Bart van Merrienboer, Caglar Gulcehre")
+    assert "author = {Kyunghyun Cho and Bart van Merrienboer and Caglar Gulcehre}," in out
+
+
+def test_etal_with_two_author_comma_list():
+    out = _author("Kaiming He, Xiangyu Zhang, et al.")
+    assert "author = {Kaiming He and Xiangyu Zhang and others}," in out
+
+
+def test_escape_text_paren_math_internal_paren_preserved():
+    e = {"bibkey": "x", "title": r"Use \(f(x_i)=0\) in proof", "authors": "Z",
+         "primary_url": "https://e.org/x", "status": "v", "claim_family": "c"}
+    out = render_entry(e)
+    assert r"\(f(x_i)=0\)" in out                     # whole math span kept; x_i not escaped
+
+
+def test_escape_text_lone_dollar_escaped():
+    e = {"bibkey": "x", "title": "a budget of $5 per item", "authors": "Z",
+         "primary_url": "https://e.org/x", "status": "v", "claim_family": "c"}
+    out = render_entry(e)
+    assert r"\$5" in out                              # odd $ count → literal, escaped
+
+
+def test_escape_text_even_dollar_math_preserved():
+    e = {"bibkey": "x", "title": r"nucleus top-$p$ sampling", "authors": "Z",
+         "primary_url": "https://e.org/x", "status": "v", "claim_family": "c"}
+    out = render_entry(e)
+    assert "$p$" in out                               # balanced $...$ kept as math
+
+
+def test_entry_blocks_brace_aware(tmp_path):
+    from tooling.generate.bib_ledger_to_bib import _entry_blocks
+    text = (
+        "@misc{indented,\n  title = {X}\n  }\n\n"               # indented final brace
+        "@book{multiline,\n  abstract = {First line\n}\n  ,\n  year = {2020}\n}\n"  # } alone on a line
+    )
+    blocks = dict(_entry_blocks(text))
+    assert set(blocks) == {"indented", "multiline"}
+    assert "year = {2020}" in blocks["multiline"]              # not truncated at the field's }-line
+
+
 def test_bare_ampersand_backstop_escaped():
     # an author legitimately containing '&' (no surrounding spaces → not a separator)
     e = {"bibkey": "att1970", "title": "Unix", "authors": "AT&T Bell Labs",

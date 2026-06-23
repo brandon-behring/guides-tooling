@@ -53,6 +53,19 @@ def test_case_insensitive_same_word_dup(tmp_path):
     assert sorted(leak.los_id for leak in find_bloom_leaks(gd)) == ["X-1.1", "X-1.2"]
 
 
+def test_hyphenated_repeat_not_flagged(tmp_path):
+    # "Use use-case" is legit ("use" starts "use-case", not a repeat of "Use")
+    body = r"""
+\begin{itemize}
+  \item[X-1.1] Use use-case diagrams to capture actor goals before coding.
+  \item[X-1.2] State state machines model lifecycle transitions explicitly.
+\end{itemize}
+"""
+    gd = _make_guide(tmp_path, body)
+    # X-1.1 must NOT be flagged; X-1.2 (real "State state") still is
+    assert sorted(leak.los_id for leak in find_bloom_leaks(gd)) == ["X-1.2"]
+
+
 def test_line_numbers_reported(tmp_path):
     gd = _make_guide(tmp_path, CHECKPOINT)
     by_id = {leak.los_id: leak for leak in find_bloom_leaks(gd)}

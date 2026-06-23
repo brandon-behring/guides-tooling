@@ -75,10 +75,12 @@ GENERIC_PATTERNS: list[tuple[str, str]] = [
 # ── Content-free templated/scaffold margins ──────────────────────────────────
 # A distinct class from GENERIC_PATTERNS: a margin whose ENTIRE text is a
 # scaffold template that merely restates the chapter title ("Common mistake in
-# <title>.") with no actual mistake / pattern / technique. Patterns are anchored
-# to the whole note and exclude a ``:`` (which would introduce real content), so
-# a genuine "Common mistake in X: <specific failure>" is NOT flagged. Gated
-# independently of density via ``--strict-templates`` (see main).
+# <title>.") with no actual mistake / pattern / technique. Two guards keep this
+# from flagging genuine notes: a ``:`` (introduces real content) AND a finite
+# verb / clause word (_GENUINE_PREDICATE_RE) — so "Common mistake in pandas IS
+# chained assignment..." is NOT flagged. The "see related ... chapters" form was
+# dropped: a genuine "See related X chapters for Y" is structurally identical to
+# the stub and cannot be told apart by pattern. Gated via ``--strict-templates``.
 TEMPLATE_SIGNATURES: list[tuple[str, str]] = [
     (r"(?i)^\s*common mistake in [^:]{1,90}\.?\s*$",
      "templated scaffold: names the section, not the mistake"),
@@ -86,13 +88,19 @@ TEMPLATE_SIGNATURES: list[tuple[str, str]] = [
      "templated scaffold: names the section, not the pattern"),
     (r"(?i)^\s*implement a small example applying [^:]{1,90}\.?\s*$",
      "templated scaffold: generic practice stub (no time/technique)"),
-    (r"(?i)^\s*see related [^:]{1,60}chapters?[^:]{0,40}\.?\s*$",
-     "templated scaffold: vague cross-reference"),
 ]
 _TEMPLATE_RES = [(re.compile(p), label) for p, label in TEMPLATE_SIGNATURES]
+# A finite verb / clause word ⇒ the note is a real sentence, not a bare title
+# restatement; exempt it (none of these appear in the templated stubs).
+_GENUINE_PREDICATE_RE = re.compile(
+    r"(?i)\b(?:is|are|was|were|be|use|uses|using|avoid|avoids|check|ensure|"
+    r"prefer|happens?|occurs?|writes?|reads?|causes?|leads?|results?|when|"
+    r"because|forget|forgets|swap|keep|treat|never|always|do|does|don't)\b")
 
 
 def templated_margin_label(text: str) -> Optional[str]:
+    if _GENUINE_PREDICATE_RE.search(text):
+        return None  # a real clause/sentence → not a content-free scaffold
     """Return the scaffold-template label if ``text`` is a content-free template."""
     for rx, label in _TEMPLATE_RES:
         if rx.match(text):

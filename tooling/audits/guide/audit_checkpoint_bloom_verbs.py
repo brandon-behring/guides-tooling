@@ -29,10 +29,12 @@ from dataclasses import dataclass
 from tooling.audits.fleet.audit_gold import CHECKPOINT_ITEM_RE  # single source of truth
 from tooling.audits.guide._guide_scope import chapter_files, guide_dir_for_slug
 
-# A duplicated leading word: two alphabetic words, case-insensitively equal,
-# at the very start of the checkpoint body (e.g. "explain Explain", "Identify
-# Identify"). Guarding on word characters keeps math / macros from matching.
-_LEADING_DUP_RE = re.compile(r"^([A-Za-z]+)\s+([A-Za-z]+)\b")
+# A duplicated leading word: two alphabetic words, case-insensitively equal, at
+# the very start of the checkpoint body (e.g. "explain Explain", "Identify
+# Identify"). The (?![\w-]) guard requires the second word to be COMPLETE — so a
+# legit "Use use-case ..." (where "use" is the start of "use-case", not a repeat
+# of "Use") is NOT flagged.
+_LEADING_DUP_RE = re.compile(r"^([A-Za-z]+)\s+([A-Za-z]+)(?![\w-])")
 
 
 @dataclass
