@@ -42,8 +42,10 @@ except ImportError:
 # it) so a benign typeout/Info line that merely embeds a ``foo.tex:NN:`` location
 # (e.g. ``Package x Info: chapters/01.tex:12: ...``) is NOT matched — only a true
 # ``file:line:error``-style line, which lualatex emits starting with the path.
-# Validated: 0 false positives across all clean ``main_digital.log`` files.
-_LATEX_ERROR_RE = re.compile(r"(?m)^(?:\! .*|[^\s:]*\.tex:\d+: .*)$")
+# ``^\s*`` allows an indented error line; the path arm still anchors at the path
+# (after optional leading space) so a benign ``Package x Info: foo.tex:12:`` (text
+# before the path) does not match. Validated: 0 false positives on clean logs.
+_LATEX_ERROR_RE = re.compile(r"(?m)^\s*(?:\! .*|[^\s:]*\.tex:\d+: .*)$")
 
 
 @dataclass

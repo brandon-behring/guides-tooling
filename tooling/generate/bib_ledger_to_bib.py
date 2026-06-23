@@ -67,19 +67,21 @@ def _escape_amp(s: str) -> str:
 
 # Math spans are passed through verbatim so e.g. a title "$x_i$" keeps its
 # subscript while a literal "SHUFFLE_HASH" gets its underscore escaped. The
-# delimiter forms (\(..\) / \[..\]) are unambiguous and use .*? to the real
-# closing token (NOT [^)]/[^]] which break on an internal ) or ]). The $...$ form
-# is only treated as math when the unescaped-$ count is EVEN; an odd count cannot
-# be valid paired math, so every $ is escaped as a literal instead.
-_MATH_DELIM_RE = re.compile(r"\\\(.*?\\\)|\\\[.*?\\\]", re.DOTALL)
-_MATH_FULL_RE = re.compile(r"\$[^$]*\$|\\\(.*?\\\)|\\\[.*?\\\]", re.DOTALL)
-_UNESCAPED_DOLLAR_RE = re.compile(r"(?<!\\)\$")
+# delimiter forms (\(..\) / \[..\]) use .*? to the REAL closing token (NOT
+# [^)]/[^]], which break on an internal ) or ]). The $-span's opening $ carries a
+# (?<!\\) guard so an already-escaped \$ (a literal dollar) is never read as a
+# math delimiter.
+_MATH_SPAN_RE = re.compile(r"(?<!\\)\$[^$]*\$|\\\(.*?\\\)|\\\[.*?\\\]", re.DOTALL)
+# A literal dollar is virtually always a price ($5, $10) — escape a $ that is
+# followed by a digit (and not already escaped) BEFORE math-span detection, so it
+# can never form a spurious $...$ pair with real math elsewhere.
+_PRICE_DOLLAR_RE = re.compile(r"(?<!\\)\$(?=\d)")
 _SPECIALS = ("&", "%", "#", "_")
 
 
-def _escape_specials(s: str, chars: tuple[str, ...] = _SPECIALS) -> str:
-    r"""Idempotently escape each of ``chars`` (``(?<!\\)`` guard → no double-escape)."""
-    for ch in chars:
+def _escape_specials(s: str) -> str:
+    r"""Idempotently escape each of ``& % # _`` (``(?<!\\)`` guard → no double-escape)."""
+    for ch in _SPECIALS:
         s = re.sub(r"(?<!\\)" + re.escape(ch), "\\" + ch, s)
     return s
 
@@ -88,19 +90,16 @@ def _escape_text(s: str) -> str:
     r"""Escape LaTeX specials in a free-text field (``title`` / ``venue`` /
     ``note``) OUTSIDE math. Idempotent on already-escaped input. URLs are
     ``\url{}``-wrapped at the call site so their underscores never reach here.
-    A balanced ``$...$`` is preserved (real math like ``$x_i$``); a lone/odd ``$``
-    is escaped as a literal (a price). Known edge: two literal ``$`` with text
-    between them are treated as a math pair (rare; the fleet writes ``\$`` for
-    literal dollars)."""
-    even_dollars = len(_UNESCAPED_DOLLAR_RE.findall(s)) % 2 == 0
-    span_re = _MATH_FULL_RE if even_dollars else _MATH_DELIM_RE
-    chars = _SPECIALS if even_dollars else _SPECIALS + ("$",)
+    A literal price ``$N`` is escaped; a balanced ``$...$`` math span (e.g.
+    ``$x_i$``) is preserved — even when a literal price sits beside it, because
+    the price ``$`` is escaped first. ``$`` / ``^`` / ``~`` inside math are kept."""
+    s = _PRICE_DOLLAR_RE.sub(r"\\$", s)  # prices first → no spurious math pairing
     out, last = [], 0
-    for m in span_re.finditer(s):
-        out.append(_escape_specials(s[last:m.start()], chars))
+    for m in _MATH_SPAN_RE.finditer(s):
+        out.append(_escape_specials(s[last:m.start()]))
         out.append(m.group(0))  # math span verbatim
         last = m.end()
-    out.append(_escape_specials(s[last:], chars))
+    out.append(_escape_specials(s[last:]))
     return "".join(out)
 
 
@@ -135,7 +134,12 @@ def _authors(a: str | None) -> str | None:
     # author to disambiguate rather than silently shredded into phantom authors.
     if " and " not in a and "," in a:
         toks = [t.strip() for t in a.split(",") if t.strip()]
-        if len(toks) >= 2 and all(" " in t for t in toks):
+        # Split only when every token is a multi-word "First Last" name AND the
+        # first token does not start with a lowercase surname particle (van/von/de
+        # ...). The particle guard preserves a single "van der Berg, Johann Smith"
+        # (Last, First) rather than shredding it into two phantom authors.
+        if (len(toks) >= 2 and all(" " in t for t in toks)
+                and not (toks[0][:1].islower())):
             a = " and ".join(toks)
     if et_al:
         a = (a + " and others") if a else "others"
@@ -219,8 +223,18 @@ def _entry_blocks(text: str) -> list[tuple[str, str]]:
         if not m:
             return out
         start = m.start()
+        # Skip a commented-out entry (an unescaped % before the @ on its line) so a
+        # `% @misc{old,...}` is never resurrected as a live orphan on regeneration.
+        line_start = text.rfind("\n", 0, start) + 1
+        if re.search(r"(?<!\\)%", text[line_start:start]):
+            pos = m.end()
+            continue
+        # Cap the brace walk at the NEXT entry start: an unbalanced/malformed entry
+        # then stops there instead of swallowing every following entry.
+        nxt = _ENTRY_START_RE.search(text, m.end())
+        limit = nxt.start() if nxt else len(text)
         depth, j = 0, text.index("{", start)  # the '{' right after @type
-        while j < len(text):
+        while j < limit:
             c = text[j]
             if c == "{":
                 depth += 1
@@ -230,8 +244,9 @@ def _entry_blocks(text: str) -> list[tuple[str, str]]:
                     j += 1
                     break
             j += 1
-        out.append((m.group(1).strip(), text[start:j]))
-        pos = j
+        end = j if depth == 0 else limit
+        out.append((m.group(1).strip(), text[start:end].rstrip()))
+        pos = max(end, m.end())
 
 
 def convert(guide_dir: Path, force: bool = False) -> str:

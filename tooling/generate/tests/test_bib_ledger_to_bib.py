@@ -281,3 +281,22 @@ def test_no_orphans_means_no_divider(tmp_path):
     out = (gd / "guide" / "references.bib").read_text()
     assert "PRESERVED" not in out                             # no spurious divider
     assert out.endswith("\n")
+
+
+def test_escape_text_price_beside_math():
+    from tooling.generate.bib_ledger_to_bib import _escape_text
+    assert _escape_text(r"\$5 and $x_i$") == r"\$5 and $x_i$"        # math preserved
+    assert _escape_text("Costs $50 and $200") == r"Costs \$50 and \$200"  # both literal
+    assert _escape_text("$x$ costs $5") == r"$x$ costs \$5"          # math + price
+
+
+def test_authors_particle_surname_not_split():
+    out = _author("van der Berg, Johann Smith")
+    assert "author = {van der Berg, Johann Smith}," in out      # single author, not shredded
+
+
+def test_entry_blocks_skips_commented_and_caps_unbalanced():
+    from tooling.generate.bib_ledger_to_bib import _entry_blocks
+    assert _entry_blocks("% @misc{old,\n  title={X}\n}\n") == []          # commented → ignored
+    keys = sorted(k for k, _ in _entry_blocks("@misc{a,\n  t = {X}\n\n@book{b,\n  y={2}\n}\n"))
+    assert keys == ["a", "b"]                                             # unbalanced 'a' didn't swallow 'b'

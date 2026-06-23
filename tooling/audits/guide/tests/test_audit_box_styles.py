@@ -67,3 +67,16 @@ def test_builtin_bare_key_ignored(tmp_path, monkeypatch):
     gd = _mk(tmp_path, r"\begin{tcolorbox}[breakable, narrativebox]q\end{tcolorbox}",
              sty=r"\tcbset{narrativebox/.style={}}")
     assert m.find_undefined_box_styles(gd) == []
+
+
+# round-2 adversarial regressions
+def test_tikz_style_not_registered():
+    assert m._styles_in(r"\tikzset{ every node/.style={draw}, stage/.style={x} }") == set()
+    assert m._styles_in(r"\tcbset{ a/.style={}, b/.style={} }") == {"a", "b"}
+
+
+def test_nested_braces_in_options_seen(tmp_path, monkeypatch):
+    monkeypatch.setattr(m, "_shared_styles", lambda: frozenset())
+    monkeypatch.setattr(m, "_universe", lambda: frozenset({"narrativebox"}))
+    gd = _mk(tmp_path, r"\begin{tcolorbox}[title={An array {x}[j]}, narrativebox]q\end{tcolorbox}", "")
+    assert m.find_undefined_box_styles(gd) == ["narrativebox"]

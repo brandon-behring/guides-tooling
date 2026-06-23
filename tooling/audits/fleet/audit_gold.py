@@ -821,10 +821,14 @@ def check_gate7_currency(guide_dir: Path, qa: dict, now: datetime) -> GateResult
 # and a failed biber run is logged to .blg, not the .log -- and many guide
 # Makefiles ``-``-prefix biber/lualatex so ``make`` can exit 0 anyway. So GB must
 # scan for these too, not just LaTeX errors + the make return code.
+# "Reference/Citation `x' ... undefined" (either word order) + the summary line.
 _UNDEF_CITE_RE = re.compile(
-    r"(?i)(?:undefined (?:reference|citation)|citation `[^']*' (?:on page .* )?undefined"
+    r"(?i)(?:undefined (?:reference|citation)|(?:reference|citation) `[^']*'[^\n]*undefined"
     r"|there were undefined (?:references|citations))")
-_BIBER_ERR_RE = re.compile(r"> (?:ERROR|FATAL) -|skipping entry")
+# A biber HARD error only (``> ERROR -`` / ``> FATAL -``); the "too many commas,
+# skipping entry" failure is itself reported on a ``> ERROR -`` line, so matching a
+# bare "skipping entry" would only add false positives (benign INFO skip lines).
+_BIBER_ERR_RE = re.compile(r"> (?:ERROR|FATAL) -")
 
 
 def check_gate_build(guide_dir: Path) -> GateResult:
@@ -836,6 +840,10 @@ def check_gate_build(guide_dir: Path) -> GateResult:
     name = "GB: clean 2-pass build"
     if not (guide_sub / "Makefile").exists() and not (guide_sub / "main.tex").exists():
         return GateResult(name, False, "no buildable guide/ (Makefile/main.tex missing)")
+    # Remove stale intermediates so the .bbl/.blg/.log we scan are THIS build's
+    # (a stale .bbl can mask a real bib break; a stale .blg can fake a biber error).
+    for ext in ("bbl", "bcf", "aux", "blg", "run.xml"):
+        (guide_sub / f"main_digital.{ext}").unlink(missing_ok=True)
     proc = subprocess.run(
         ["make", "-C", str(guide_sub), "digital"],
         cwd=str(paths.host_root()), capture_output=True, text=True,

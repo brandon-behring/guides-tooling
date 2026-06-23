@@ -34,21 +34,57 @@ from pathlib import Path
 from tooling import discovery, paths
 from tooling.audits.guide._guide_scope import guide_dir_for_slug
 
-# A custom style is defined via <NAME>/.style={...} (anywhere — a single
-# \tcbset{} may define several, comma-separated) or \newtcolorbox{NAME}.
-_DEF_RE = re.compile(r"([a-zA-Z][a-zA-Z0-9]*)/\.style\b|\\newtcolorbox\{([a-zA-Z][a-zA-Z0-9]*)\}")
-# The option list of each \begin{tcolorbox}[...]; a {..} group is consumed whole
-# so a ] inside e.g. title={Array A[i]} does not truncate the option scan.
-_BEGIN_RE = re.compile(r"\\begin\{tcolorbox\}\[((?:\{[^{}]*\}|[^\]])*)\]", re.DOTALL)
-# A bare option token (a style name, not a key=value built-in).
-_BARE_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9]*$")
+_NAME_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9]*")
+_STYLE_RE = re.compile(r"([a-zA-Z][a-zA-Z0-9]*)/\.style\b")        # only WITHIN a \tcbset{}
+_NEWBOX_RE = re.compile(r"\\newtcolorbox\{([a-zA-Z][a-zA-Z0-9]*)\}")
+_TCBSET_RE = re.compile(r"\\tcbset\{")
+_BEGIN_RE = re.compile(r"\\begin\{tcolorbox\}\[")
 # Strip a LaTeX line comment (% to end of line, but not an escaped \%), so a
-# commented-out \begin{tcolorbox}[...] example is not scanned as a real use.
+# commented-out \begin{tcolorbox}[...] / \tcbset example is not scanned.
 _COMMENT_RE = re.compile(r"(?<!\\)%.*")
 
 
+def _matched_group(text: str, open_pos: int, open_c: str = "{", close_c: str = "}") -> int:
+    """Index just past the ``close_c`` that matches the bracket/brace at ``open_pos``."""
+    depth, j = 0, open_pos
+    while j < len(text):
+        c = text[j]
+        if c == open_c:
+            depth += 1
+        elif c == close_c:
+            depth -= 1
+            if depth == 0:
+                return j + 1
+        j += 1
+    return len(text)
+
+
 def _styles_in(text: str) -> set[str]:
-    return {a or b for a, b in _DEF_RE.findall(text)}
+    r"""Custom box styles DEFINED in ``text``: every ``NAME/.style`` inside a
+    (brace-matched) ``\tcbset{...}`` block + every ``\newtcolorbox{NAME}``. Scoping
+    ``/.style`` to ``\tcbset`` is essential — a shared ``\tikzset{ every node/.style
+    ...}`` or a tikzpicture option must NOT register ``node`` as a tcolorbox style."""
+    out = set(_NEWBOX_RE.findall(text))
+    for m in _TCBSET_RE.finditer(text):
+        end = _matched_group(text, m.end() - 1)        # the '{' of \tcbset{
+        out |= set(_STYLE_RE.findall(text[m.end():end]))
+    return out
+
+
+def _split_top_commas(s: str) -> list[str]:
+    """Split on commas at brace depth 0 (so ``title={a, b}`` stays one token)."""
+    parts, buf, depth = [], [], 0
+    for c in s:
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+        if c == "," and depth == 0:
+            parts.append("".join(buf)); buf = []
+        else:
+            buf.append(c)
+    parts.append("".join(buf))
+    return parts
 
 
 def _read(p: Path) -> str:
@@ -85,14 +121,20 @@ def _defined_styles(guide_dir: Path) -> set[str]:
 
 
 def _used_styles(guide_dir: Path) -> set[str]:
-    """Bare custom-style tokens used in any \\begin{tcolorbox}[...] of the guide."""
+    """Bare custom-style tokens used in any \\begin{tcolorbox}[...] of the guide.
+
+    Bracket-aware: the option list is read to the ``]`` that matches at brace
+    depth 0, so a nested ``title={Array [i] {x}}`` never truncates the scan."""
     used: set[str] = set()
     g = guide_dir / "guide"
     for tex in list(g.glob("chapters/*.tex")) + list(g.glob("appendices/*.tex")):
-        for opts in _BEGIN_RE.findall(_read(tex)):
-            for tok in opts.split(","):
+        text = _read(tex)
+        for m in _BEGIN_RE.finditer(text):
+            end = _matched_group(text, m.end() - 1, "[", "]")   # the '[' of [...]
+            opts = text[m.end():end - 1]
+            for tok in _split_top_commas(opts):
                 tok = tok.strip()
-                if tok and "=" not in tok and _BARE_RE.match(tok):
+                if tok and "=" not in tok and _NAME_RE.fullmatch(tok):
                     used.add(tok)
     return used
 

@@ -99,9 +99,15 @@ _GENUINE_PREDICATE_RE = re.compile(
 
 
 def templated_margin_label(text: str) -> Optional[str]:
+    """Return the scaffold-template label if ``text`` is a content-free template.
+
+    Deliberately conservative: a note containing a finite verb / clause word is
+    treated as genuine and exempted, so the gate never FALSE-positives a real
+    note. The cost is occasional false-NEGATIVES (a stub whose section title
+    incidentally contains a verb word, e.g. "Common mistake in using X.") — the
+    safe failure direction for a gate, and a rare one for real chapter titles."""
     if _GENUINE_PREDICATE_RE.search(text):
         return None  # a real clause/sentence → not a content-free scaffold
-    """Return the scaffold-template label if ``text`` is a content-free template."""
     for rx, label in _TEMPLATE_RES:
         if rx.match(text):
             return label
