@@ -72,6 +72,47 @@ GENERIC_PATTERNS: list[tuple[str, str]] = [
     (r"\bsimilar to\b.*\bmethods\b", "vague analogy"),
 ]
 
+# ── Content-free templated/scaffold margins ──────────────────────────────────
+# A distinct class from GENERIC_PATTERNS: a margin whose ENTIRE text is a
+# scaffold template that merely restates the chapter title ("Common mistake in
+# <title>.") with no actual mistake / pattern / technique. Two guards keep this
+# from flagging genuine notes: a ``:`` (introduces real content) AND a finite
+# verb / clause word (_GENUINE_PREDICATE_RE) — so "Common mistake in pandas IS
+# chained assignment..." is NOT flagged. The "see related ... chapters" form was
+# dropped: a genuine "See related X chapters for Y" is structurally identical to
+# the stub and cannot be told apart by pattern. Gated via ``--strict-templates``.
+TEMPLATE_SIGNATURES: list[tuple[str, str]] = [
+    (r"(?i)^\s*common mistake in [^:]{1,90}\.?\s*$",
+     "templated scaffold: names the section, not the mistake"),
+    (r"(?i)^\s*key pattern from [^:]{1,90}\.?\s*$",
+     "templated scaffold: names the section, not the pattern"),
+    (r"(?i)^\s*implement a small example applying [^:]{1,90}\.?\s*$",
+     "templated scaffold: generic practice stub (no time/technique)"),
+]
+_TEMPLATE_RES = [(re.compile(p), label) for p, label in TEMPLATE_SIGNATURES]
+# A finite verb / clause word ⇒ the note is a real sentence, not a bare title
+# restatement; exempt it (none of these appear in the templated stubs).
+_GENUINE_PREDICATE_RE = re.compile(
+    r"(?i)\b(?:is|are|was|were|be|use|uses|using|avoid|avoids|check|ensure|"
+    r"prefer|happens?|occurs?|writes?|reads?|causes?|leads?|results?|when|"
+    r"because|forget|forgets|swap|keep|treat|never|always|do|does|don't)\b")
+
+
+def templated_margin_label(text: str) -> Optional[str]:
+    """Return the scaffold-template label if ``text`` is a content-free template.
+
+    Deliberately conservative: a note containing a finite verb / clause word is
+    treated as genuine and exempted, so the gate never FALSE-positives a real
+    note. The cost is occasional false-NEGATIVES (a stub whose section title
+    incidentally contains a verb word, e.g. "Common mistake in using X.") — the
+    safe failure direction for a gate, and a rare one for real chapter titles."""
+    if _GENUINE_PREDICATE_RE.search(text):
+        return None  # a real clause/sentence → not a content-free scaffold
+    for rx, label in _TEMPLATE_RES:
+        if rx.match(text):
+            return label
+    return None
+
 # ── Density thresholds ───────────────────────────────────────────────────────
 # B12: Chapter-type-aware density targets (Stull & Mayer 2007)
 # Code-heavy chapters (>5 minted blocks) need fewer margin notes to avoid
@@ -450,6 +491,11 @@ def main() -> None:
     parser.add_argument("--all", action="store_true", help="Audit all guides")
     parser.add_argument("--guide", type=str, help="Single guide slug")
     parser.add_argument("--json", action="store_true", help="JSON output")
+    parser.add_argument("--strict", "--check", dest="strict", action="store_true",
+                        help="exit 1 if any audited guide is margin density/quality RED")
+    parser.add_argument("--strict-templates", dest="strict_templates", action="store_true",
+                        help="exit 1 if any audited guide has content-free templated/scaffold "
+                             "margins (independent of density; this is the gated subset)")
     parser.add_argument("--repo-root", type=str, default=None)
     args = parser.parse_args()
 
@@ -479,6 +525,36 @@ def main() -> None:
         print(json.dumps(to_json(results), indent=2))
     else:
         print_dashboard(results)
+
+    # --strict: a RED density (too sparse) or RED quality (too many generic /
+    # over-length / split-attention notes) is a Gold-blocking failure. Gated
+    # behind --strict so the default advisory run (and audit_gold's current
+    # advisory invocation) is unaffected. FAIL goes to stderr to keep --json
+    # stdout parseable; exit 1 is what audit_gold G2 keys on.
+    if args.strict:
+        red = [g for g in results if g.density_status == "RED" or g.quality_status == "RED"]
+        for g in red:
+            flags = [s for s, st in (("density", g.density_status), ("quality", g.quality_status)) if st == "RED"]
+            print(f"FAIL  {g.slug}: margin {'+'.join(flags)} RED", file=sys.stderr)
+        if red:
+            sys.exit(1)
+
+    # --strict-templates: a content-free scaffold margin ("Common mistake in
+    # <title>.") is a visible craft defect. Gated SEPARATELY from --strict so the
+    # templated-margin subset can be a hard G2 gate while full margin density/
+    # quality gating (T2b) stays deferred. FAIL → stderr; exit 1 keys G2.
+    if args.strict_templates:
+        flagged = False
+        for g in results:
+            for ch in g.chapters:
+                for note in ch.notes:
+                    label = templated_margin_label(note.text)
+                    if label:
+                        flagged = True
+                        print(f"FAIL  {g.slug}: templated margin ({Path(note.file_path).name}:"
+                              f"{note.line_number}) — {label}", file=sys.stderr)
+        if flagged:
+            sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ is brought up to the 7-gate Gold definition in
 ``tooling/standards/tier_model.md``:
 
   G1  retrieval coverage (100%) + zero checkpoint stubs.
-  G2  **11**-audit clean: the ten binary audits emit no failure, AND
+  G2  **13**-audit clean: the twelve binary audits emit no failure, AND
       ``back_content`` reports zero CRITICAL and zero HIGH (MEDIUM/INFO advisory).
   G3  built per-chapter decks (>= max(2, chapters-1)) + a complete deck + an
       ``anki.course_map`` covering every module; waiver ``decks_complete_only``.
@@ -83,27 +83,36 @@ from tooling import discovery, layout, paths
 REPORTS_DIR = paths.host_root() / "reports"
 
 # ---------------------------------------------------------------------------
-# G2 -- the eleven gated audits.
+# G2 -- the thirteen gated audits.
 # ---------------------------------------------------------------------------
-# The ten binary audits, each mapped to the flag that makes it exit non-zero on
+# The twelve binary audits, each mapped to the flag that makes it exit non-zero on
 # its OWN failure condition (empty = no strict flag needed). check_gate2 treats
 # a failure as any non-zero exit OR a leading "FAIL" line, so all ten run
 # uniformly: crossref_quality exits 1 on broken refs; card_presentation prints
-# "FAIL" and exits 0; the --strict/--check audits exit non-zero on failure;
-# margin_quality and term_consistency expose no pass/fail gate today (so they
-# pass on a valid guide) but are still run so a future FAIL line is caught
-# rather than silently skipped.
-TEN_AUDITS: dict[str, list[str]] = {
+# "FAIL" and exits 0; the --strict/--check audits exit non-zero on failure.
+#
+# T2b: margin_quality and term_consistency now EXPOSE a --strict gate (margin =
+# density/quality RED; term = within-guide duplicate definitions). They are
+# deliberately still run WITHOUT --strict here -- activating the gate today would
+# regress 4 of the 5 live Gold guides (ai_model_evaluation + docker_in_action_2e
+# are margin-RED; nlp_in_action + llms_in_production carry within-guide term
+# dupes), which is a content-remediation / threshold-calibration decision, not a
+# tooling toggle. Flip these two to ["--strict"] once that pass lands. They are
+# still invoked (flagless) so a future leading "FAIL" line is caught, not skipped.
+GUIDE_AUDITS: dict[str, list[str]] = {
     "audit_atomicity": ["--check"],
+    "audit_box_styles": ["--strict"],       # gated: every used tcolorbox style is defined
     "audit_card_presentation": [],          # FAIL via ^FAIL line; exits 0
     "audit_card_quality": ["--strict"],
+    "audit_checkpoint_bloom_verbs": ["--strict"],  # gated: 0 duplicated-verb LOS
     "audit_content_freshness": ["--strict"],
     "audit_content_quality": ["--strict"],
     "audit_crossref_quality": [],           # exits 1 on broken refs
-    "audit_margin_quality": [],             # no binary gate today
+    "audit_margin_quality": ["--strict-templates"],  # gated: 0 content-free templated
+                                            # margins (density/quality --strict still T2b)
     "audit_retrieval_coverage": ["--strict"],
     "audit_solution_quality": ["--strict"],
-    "audit_term_consistency": [],           # no binary gate today
+    "audit_term_consistency": [],           # --strict exists (T2b); not gated yet
 }
 
 RETRIEVAL_RE = re.compile(r"coverage\s+([\d.]+)%", re.IGNORECASE)
@@ -154,6 +163,10 @@ E_FILENAME = "E_post_course_updates.tex"
 F_FILENAME = "F_contrasting_opinions_open_debates.tex"
 G7_MIN_CURRENCY_ITEMS = 3
 G7_MIN_DEBATES = 3
+# F citation floor: a contested debate is only honest if its Positions are cited.
+# Enforce max(G7_F_CITE_FLOOR, 2 x debates) resolvable citation markers across the
+# (comment-stripped) appendix, so verdict flags alone cannot pass an uncited F.
+G7_F_CITE_FLOOR = 6
 # A stub E: "No significant {breaking changes / best-practice shifts / ...}
 # identified yet" and the like. Substantive change items still naming a surface
 # do not match because of the trailing "yet".
@@ -181,6 +194,24 @@ SUBSECTION_RE = re.compile(r"^\s*\\(?:subsection|paragraph)\*?\{", re.MULTILINE)
 # sits..." once, which would otherwise inflate the debate count by 1.
 WHERE_BOOK_RE = re.compile(r"(?i)\\textbf\{[^}]*?where\s+(?:this|the)\s+book\s+sits")
 VERDICT_RE = re.compile(r"(?i)(well[-\s]supported|contested|dated)")
+# Resolvable citation markers (same family as the epilogue gate): a biblatex cite
+# command, an arXiv id, a DOI, or an http(s) permalink. Counted on comment-stripped
+# text so a fresh scaffold's commented example-cites do not satisfy the floor.
+F_CITE_RES = (
+    re.compile(r"\\(?:parencite|cite|footcite|textcite|autocite|href)\b"),
+    re.compile(r"\b\d{4}\.\d{4,5}\b"),       # arXiv id
+    re.compile(r"10\.\d{4,}/\S+"),            # DOI
+    re.compile(r"https?://"),                 # permalink
+)
+
+
+def _strip_tex_comments(text: str) -> str:
+    """Drop full-line and trailing TeX comments (ignoring escaped ``\\%``)."""
+    out = []
+    for line in text.splitlines():
+        m = re.search(r"(?<!\\)%", line)
+        out.append(line[: m.start()] if m else line)
+    return "\n".join(out)
 
 VELOCITY_MAX_AGE_MONTHS = {"fast": 6, "medium": 12, "slow": 18}
 SHELF_VELOCITY = {
@@ -413,12 +444,12 @@ def check_gate1_retrieval(slug: str, guide_dir: Path) -> GateResult:
 
 
 # ---------------------------------------------------------------------------
-# Gate 2 -- 11-audit clean.
+# Gate 2 -- 13-audit clean.
 # ---------------------------------------------------------------------------
 
 def check_gate2_audits(slug: str) -> GateResult:
     failures: list[str] = []
-    for module, flags in TEN_AUDITS.items():
+    for module, flags in GUIDE_AUDITS.items():
         code, out = run_guide_audit(module, slug, flags)
         if NOT_FOUND_RE.search(out):
             failures.append(f"{module}: not in audit scope")
@@ -431,7 +462,7 @@ def check_gate2_audits(slug: str) -> GateResult:
                     break
             failures.append(f"{module}{snippet}")
 
-    # 11th audit: back_content gates on CRITICAL + HIGH == 0.
+    # 13th audit: back_content gates on CRITICAL + HIGH == 0.
     sev = run_back_content(slug)
     if sev is None:
         failures.append("back_content: no JSON output")
@@ -441,8 +472,8 @@ def check_gate2_audits(slug: str) -> GateResult:
             failures.append(f"back_content: {crit} CRITICAL / {high} HIGH")
 
     if not failures:
-        return GateResult("G2: 11-audit clean (zero FAIL)", True, "all 11 clean")
-    return GateResult("G2: 11-audit clean (zero FAIL)", False,
+        return GateResult("G2: 13-audit clean (zero FAIL)", True, "all 13 clean")
+    return GateResult("G2: 13-audit clean (zero FAIL)", False,
                       f"{len(failures)} failing: " + "; ".join(failures[:3]))
 
 
@@ -752,6 +783,12 @@ def _check_f_appendix(guide_dir: Path, qa: dict) -> list[str]:
         issues.append(f"<{G7_MIN_DEBATES} debates ({debates})")
     if len(VERDICT_RE.findall(text)) < G7_MIN_DEBATES:
         issues.append("missing verdict flags (well-supported/contested/dated)")
+    # Cited-Contested: every debate's Positions must carry resolvable citations.
+    live = _strip_tex_comments(text)
+    cites = sum(len(rx.findall(live)) for rx in F_CITE_RES)
+    cite_floor = max(G7_F_CITE_FLOOR, 2 * debates)
+    if cites < cite_floor:
+        issues.append(f"<{cite_floor} resolvable citations ({cites})")
     return issues
 
 
@@ -773,10 +810,69 @@ def check_gate7_currency(guide_dir: Path, qa: dict, now: datetime) -> GateResult
 
 
 # ---------------------------------------------------------------------------
+# Gate B (opt-in) -- a fresh 2-pass build that emits a clean log.
+# ---------------------------------------------------------------------------
+# audit_gold is otherwise STATIC -- it never compiles the PDF, so a guide with a
+# real LaTeX build-breaker (e.g. a raw ``&`` in a bib author field) can still
+# clear G1-G7. ``--build`` adds this hard gate: it runs ``make ... digital`` and
+# scans ``main_digital.log`` with the shared, file:line:error-aware error regex.
+
+# Undefined cites/refs are reported as WARNINGS in the .log (not file:line errors)
+# and a failed biber run is logged to .blg, not the .log -- and many guide
+# Makefiles ``-``-prefix biber/lualatex so ``make`` can exit 0 anyway. So GB must
+# scan for these too, not just LaTeX errors + the make return code.
+# "Reference/Citation `x' ... undefined" (either word order) + the summary line.
+_UNDEF_CITE_RE = re.compile(
+    r"(?i)(?:undefined (?:reference|citation)|(?:reference|citation) `[^']*'[^\n]*undefined"
+    r"|there were undefined (?:references|citations))")
+# A biber HARD error only (``> ERROR -`` / ``> FATAL -``); the "too many commas,
+# skipping entry" failure is itself reported on a ``> ERROR -`` line, so matching a
+# bare "skipping entry" would only add false positives (benign INFO skip lines).
+_BIBER_ERR_RE = re.compile(r"> (?:ERROR|FATAL) -")
+
+
+def check_gate_build(guide_dir: Path) -> GateResult:
+    """GB: fresh 2-pass ``make digital`` with a clean log (LaTeX errors, undefined
+    cites/refs, and biber errors all fail it -- a non-zero make rc is not required
+    because guide Makefiles may ``-``-ignore the underlying tool's exit code)."""
+    from tooling.qa.guide_readiness import _LATEX_ERROR_RE
+    guide_sub = guide_dir / "guide"
+    name = "GB: clean 2-pass build"
+    if not (guide_sub / "Makefile").exists() and not (guide_sub / "main.tex").exists():
+        return GateResult(name, False, "no buildable guide/ (Makefile/main.tex missing)")
+    # Remove stale intermediates so the .bbl/.blg/.log we scan are THIS build's
+    # (a stale .bbl can mask a real bib break; a stale .blg can fake a biber error).
+    for ext in ("bbl", "bcf", "aux", "blg", "run.xml"):
+        (guide_sub / f"main_digital.{ext}").unlink(missing_ok=True)
+    proc = subprocess.run(
+        ["make", "-C", str(guide_sub), "digital"],
+        cwd=str(paths.host_root()), capture_output=True, text=True,
+    )
+    log = guide_sub / "main_digital.log"
+    log_text = log.read_text(errors="replace") if log.exists() else ""
+    err_lines = [ln.strip() for ln in log_text.splitlines() if _LATEX_ERROR_RE.match(ln)]
+    undef = bool(_UNDEF_CITE_RE.search(log_text))
+    blg = guide_sub / "main_digital.blg"
+    biber_err = bool(blg.exists() and _BIBER_ERR_RE.search(blg.read_text(errors="replace")))
+    if proc.returncode == 0 and not err_lines and not undef and not biber_err:
+        return GateResult(name, True, "rc=0; 0 LaTeX errors; cites + biber clean")
+    parts = [f"rc={proc.returncode}"]
+    if err_lines:
+        parts.append(f"{len(err_lines)} LaTeX error(s); e.g. {err_lines[0][:60]!r}")
+    if undef:
+        parts.append("undefined reference/citation in log")
+    if biber_err:
+        parts.append("biber ERROR in .blg (failed/skipped entry)")
+    if proc.returncode != 0 and not (err_lines or undef or biber_err):
+        parts.append("build rc!=0 (see main_digital.log)")
+    return GateResult(name, False, "; ".join(parts))
+
+
+# ---------------------------------------------------------------------------
 # Orchestration.
 # ---------------------------------------------------------------------------
 
-def audit_guide_gold(guide_dir: Path, now: datetime) -> HonestReport:
+def audit_guide_gold(guide_dir: Path, now: datetime, build: bool = False) -> HonestReport:
     slug = guide_dir.name
     qa = load_guide_qa(guide_dir)
     report = HonestReport(slug=slug)
@@ -789,6 +885,8 @@ def audit_guide_gold(guide_dir: Path, now: datetime) -> HonestReport:
     report.g5_reason = reason
     report.gates.append(check_gate6_dashboard(guide_dir, qa))
     report.gates.append(check_gate7_currency(guide_dir, qa, now))
+    if build:  # opt-in hard gate; audit_gold is static unless --build is passed
+        report.gates.append(check_gate_build(guide_dir))
     return report
 
 
@@ -852,14 +950,23 @@ def write_markdown_report(reports: list[HonestReport], meta: dict[str, str]) -> 
         f"{counts['GOLD-ELIGIBLE']} GOLD-ELIGIBLE / {counts['FAIL']} FAIL "
         f"(total {sum(counts.values())})",
         "",
-        "| Guide | Class | G1 | G2 | G3 | G4 | G5 | G6 | G7 |",
-        "|-------|-------|----|----|----|----|----|----|----|",
     ]
+    # Columns = the gate short-names seen across reports (G1..G7, plus GB when
+    # --build is used), keyed by name so no gate (e.g. GB) is silently dropped.
+    def _short(g: GateResult) -> str:
+        return g.name.split(":", 1)[0]
+    cols: list[str] = []
     for r in reports:
-        # Pad/truncate to 7 gate cells so an error row (a single "G0" gate) still
-        # fills the 7-column table rather than producing a ragged 3-cell row.
-        cells = [("PASS" if g.passed else "FAIL") for g in r.gates]
-        cells = (cells + ["—"] * 7)[:7]
+        for g in r.gates:
+            s = _short(g)
+            if s not in cols and s != "G0":
+                cols.append(s)
+    cols = cols or ["G1"]
+    lines.append("| Guide | Class | " + " | ".join(cols) + " |")
+    lines.append("|" + "----|" * (2 + len(cols)))
+    for r in reports:
+        by = {_short(g): ("PASS" if g.passed else "FAIL") for g in r.gates}
+        cells = [by.get(c, "—") for c in cols]
         lines.append("| " + " | ".join([r.slug, r.classification, *cells]) + " |")
     path.write_text("\n".join(lines) + "\n")
     return path
@@ -870,6 +977,9 @@ def main() -> None:
     ap.add_argument("--guide", help="Audit a single guide by slug")
     ap.add_argument("--verbose", action="store_true", help="Per-gate detail for all guides")
     ap.add_argument("--report", action="store_true", help="Write markdown report to reports/")
+    ap.add_argument("--build", action="store_true",
+                    help="Add gate GB: a fresh 2-pass `make digital` with a clean log "
+                         "(audit_gold is static without this). Slow; compiles each guide.")
     args = ap.parse_args()
 
     if args.guide:
@@ -887,7 +997,7 @@ def main() -> None:
     reports = []
     for gd in targets:
         try:
-            reports.append(audit_guide_gold(gd, now))
+            reports.append(audit_guide_gold(gd, now, build=args.build))
         except Exception as exc:  # noqa: BLE001 -- one bad guide must not abort the fleet
             r = HonestReport(slug=gd.name)
             r.gates.append(GateResult("G0: audit error", False, f"{type(exc).__name__}: {exc}"))

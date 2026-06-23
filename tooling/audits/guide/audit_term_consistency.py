@@ -397,6 +397,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Audit cross-guide term consistency")
     parser.add_argument("--guide", type=str, default=None, help="Focus on a single guide")
     parser.add_argument("--report", action="store_true", help="Output Markdown report")
+    parser.add_argument("--strict", "--check", dest="strict", action="store_true",
+                        help="exit 1 if the focused guide has within-guide duplicate term "
+                             "definitions (cross-guide conflicts stay advisory)")
     parser.add_argument("--output", "-o", type=str, default=None, help="Output file path")
     args = parser.parse_args()
 
@@ -439,6 +442,19 @@ def main() -> None:
     print(f"  Within-guide duplicates: {s['within_guide_duplicates']}")
     print(f"  Cross-guide conflicts: {s['cross_guide_conflicts']}")
     print(f"Output: {out_path}")
+
+    # --strict: within-guide duplicate term definitions are unambiguous bugs
+    # (the same term \term{}{}-defined twice in one guide). Cross-guide
+    # conflicts (Jaccard < 0.5) are intentionally NOT gated -- they are a
+    # fleet-level advisory signal, not a single-guide Gold blocker. FAIL goes
+    # to stderr; exit 1 is what audit_gold G2 keys on.
+    if args.strict:
+        scoped = [d for d in within_dupes if not args.guide or d.guide == args.guide]
+        for d in scoped:
+            locs = ", ".join(f"{l['file']}:{l['line']}" for l in d.locations)
+            print(f"FAIL  {d.guide}: duplicate term '{d.term}' ({locs})", file=sys.stderr)
+        if scoped:
+            sys.exit(1)
 
 
 if __name__ == "__main__":

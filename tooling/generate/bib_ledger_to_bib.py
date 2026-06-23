@@ -59,6 +59,50 @@ def _arxiv_id(url: str) -> str | None:
     return m.group(1) if m else None
 
 
+def _escape_amp(s: str) -> str:
+    r"""Escape a bare ``&`` (not already ``\&``) — the unambiguous LaTeX
+    alignment-tab breaker. Math-safe (touches nothing else), idempotent."""
+    return re.sub(r"(?<!\\)&", r"\\&", s)
+
+
+# Math spans are passed through verbatim so e.g. a title "$x_i$" keeps its
+# subscript while a literal "SHUFFLE_HASH" gets its underscore escaped. The
+# delimiter forms (\(..\) / \[..\]) use .*? to the REAL closing token (NOT
+# [^)]/[^]], which break on an internal ) or ]). The $-span's opening $ carries a
+# (?<!\\) guard so an already-escaped \$ (a literal dollar) is never read as a
+# math delimiter.
+_MATH_SPAN_RE = re.compile(r"(?<!\\)\$[^$]*\$|\\\(.*?\\\)|\\\[.*?\\\]", re.DOTALL)
+# A literal dollar is virtually always a price ($5, $10) — escape a $ that is
+# followed by a digit (and not already escaped) BEFORE math-span detection, so it
+# can never form a spurious $...$ pair with real math elsewhere.
+_PRICE_DOLLAR_RE = re.compile(r"(?<!\\)\$(?=\d)")
+_SPECIALS = ("&", "%", "#", "_")
+
+
+def _escape_specials(s: str) -> str:
+    r"""Idempotently escape each of ``& % # _`` (``(?<!\\)`` guard → no double-escape)."""
+    for ch in _SPECIALS:
+        s = re.sub(r"(?<!\\)" + re.escape(ch), "\\" + ch, s)
+    return s
+
+
+def _escape_text(s: str) -> str:
+    r"""Escape LaTeX specials in a free-text field (``title`` / ``venue`` /
+    ``note``) OUTSIDE math. Idempotent on already-escaped input. URLs are
+    ``\url{}``-wrapped at the call site so their underscores never reach here.
+    A literal price ``$N`` is escaped; a balanced ``$...$`` math span (e.g.
+    ``$x_i$``) is preserved — even when a literal price sits beside it, because
+    the price ``$`` is escaped first. ``$`` / ``^`` / ``~`` inside math are kept."""
+    s = _PRICE_DOLLAR_RE.sub(r"\\$", s)  # prices first → no spurious math pairing
+    out, last = [], 0
+    for m in _MATH_SPAN_RE.finditer(s):
+        out.append(_escape_specials(s[last:m.start()]))
+        out.append(m.group(0))  # math span verbatim
+        last = m.end()
+    out.append(_escape_specials(s[last:]))
+    return "".join(out)
+
+
 def _entry_type(e: dict) -> str:
     url = (e.get("primary_url") or "").lower()
     venue = (e.get("venue") or "").lower()
@@ -77,10 +121,29 @@ def _authors(a: str | None) -> str | None:
     if not a:
         return None
     a = re.sub(r"\s*\((?:19|20)\d{2}\)\s*$", "", a.strip()).strip()  # drop trailing "(2021)"
-    if re.search(r"\bet\s+al\.?$", a, re.IGNORECASE):
-        first = re.sub(r"\s*,?\s*et\s+al\.?$", "", a, flags=re.IGNORECASE).strip()
-        return f"{first} and others"
-    return a
+    a = a.replace(" & ", " and ")  # biblatex needs ' and ' between authors; raw & = align tab
+    et_al = bool(re.search(r"\bet\s+al\.?$", a, re.IGNORECASE))
+    if et_al:
+        a = re.sub(r"\s*,?\s*et\s+al\.?$", "", a, flags=re.IGNORECASE).strip()
+    # A comma-separated list of FULL "First Last" names is what biber rejects as
+    # "too many commas". Split on commas ONLY when EVERY comma token is multi-word
+    # — so a single "Last, First" and a "Last, Suffix, First" / "von Last, Jr,
+    # First" name are preserved (their tokens include single words), while a real
+    # "First Last, First Last[, ...]" list (every token a 2+-word name) is joined
+    # with ' and '. An ambiguous "Last, First, Last, First" list is left for the
+    # author to disambiguate rather than silently shredded into phantom authors.
+    if " and " not in a and "," in a:
+        toks = [t.strip() for t in a.split(",") if t.strip()]
+        # Split only when every token is a multi-word "First Last" name AND the
+        # first token does not start with a lowercase surname particle (van/von/de
+        # ...). The particle guard preserves a single "van der Berg, Johann Smith"
+        # (Last, First) rather than shredding it into two phantom authors.
+        if (len(toks) >= 2 and all(" " in t for t in toks)
+                and not (toks[0][:1].islower())):
+            a = " and ".join(toks)
+    if et_al:
+        a = (a + " and others") if a else "others"
+    return _escape_amp(a)  # backstop for any remaining bare & (e.g. "AT&T")
 
 
 def render_entry(e: dict) -> str:
@@ -93,12 +156,19 @@ def render_entry(e: dict) -> str:
     if au:
         fields.append(("author", au))
     if e.get("title"):
-        fields.append(("title", "{" + e["title"].strip() + "}"))  # extra braces protect case
+        # extra braces protect case; _escape_text escapes & _ # % outside math
+        fields.append(("title", "{" + _escape_text(e["title"].strip()) + "}"))
     if btype == "inproceedings" and venue:
-        fields.append(("booktitle", venue))
+        fields.append(("booktitle", _escape_text(venue)))
     elif btype == "article" and venue and not axid:
-        fields.append(("journal", venue))
-    yr = _year(venue, str(e.get("published_online") or ""))
+        fields.append(("journal", _escape_text(venue)))
+    # An explicit ledger ``year:`` wins; otherwise derive from venue /
+    # published_online. The derivation regex can mis-fire on an arXiv id that
+    # leads with a 19xx/20xx-looking prefix (e.g. arXiv:1907.07271 → "1907"),
+    # so the explicit field is the documented override for those cases.
+    yr = str(e["year"]) if e.get("year") is not None else _year(
+        venue, str(e.get("published_online") or "")
+    )
     if yr:
         fields.append(("year", yr))
     if e.get("primary_url"):
@@ -107,9 +177,10 @@ def render_entry(e: dict) -> str:
     if axid:
         notes.append(f"arXiv:{axid}")
     if venue and btype == "misc":
-        notes.append(venue)
+        notes.append(_escape_text(venue))
     if e.get("code_url"):
-        notes.append("code: " + e["code_url"].strip())
+        # \url{} renders the URL safely (underscores etc. need no escaping inside it)
+        notes.append("code: \\url{" + e["code_url"].strip() + "}")
     if notes:
         fields.append(("note", "; ".join(notes)))
 
@@ -126,6 +197,58 @@ def render_bib(entries: list[dict]) -> str:
     return "\n".join(out)
 
 
+# A regenerated bib is the ledger's. But guides routinely hand-append extra
+# ``@entry`` blocks below it (e.g. the Gold appendix-E/F citation sources that
+# are NOT in the research-gather ledger). Overwriting blindly would silently
+# delete those and turn every E/F \parencite into an undefined-citation build
+# error. So preserve any entry whose bibkey is not in the ledger, below a marker.
+MANUAL_DIVIDER = (
+    "% --- manual entries below (bibkeys not in bib_ledger.yml) are PRESERVED "
+    "across regeneration; move them into the ledger to have them managed ---"
+)
+_ENTRY_START_RE = re.compile(r"@\w+\{([^,\n]+),")
+
+
+def _entry_blocks(text: str) -> list[tuple[str, str]]:
+    """(bibkey, full ``@entry`` block) for each entry in a .bib, in file order.
+
+    Brace-aware: walks from each ``@type{key,`` to its matching close brace so a
+    multi-line braced field (e.g. a long abstract with ``}`` on its own line) or
+    an indented final ``}`` does not truncate / drop the entry — the regex form
+    ``.*?^\\}$`` did both, silently losing hand-appended manual entries."""
+    out: list[tuple[str, str]] = []
+    pos = 0
+    while True:
+        m = _ENTRY_START_RE.search(text, pos)
+        if not m:
+            return out
+        start = m.start()
+        # Skip a commented-out entry (an unescaped % before the @ on its line) so a
+        # `% @misc{old,...}` is never resurrected as a live orphan on regeneration.
+        line_start = text.rfind("\n", 0, start) + 1
+        if re.search(r"(?<!\\)%", text[line_start:start]):
+            pos = m.end()
+            continue
+        # Cap the brace walk at the NEXT entry start: an unbalanced/malformed entry
+        # then stops there instead of swallowing every following entry.
+        nxt = _ENTRY_START_RE.search(text, m.end())
+        limit = nxt.start() if nxt else len(text)
+        depth, j = 0, text.index("{", start)  # the '{' right after @type
+        while j < limit:
+            c = text[j]
+            if c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    j += 1
+                    break
+            j += 1
+        end = j if depth == 0 else limit
+        out.append((m.group(1).strip(), text[start:end].rstrip()))
+        pos = max(end, m.end())
+
+
 def convert(guide_dir: Path, force: bool = False) -> str:
     ledger = guide_dir / "review" / "research" / "bib_ledger.yml"
     bib = guide_dir / "guide" / "references.bib"
@@ -136,6 +259,8 @@ def convert(guide_dir: Path, force: bool = False) -> str:
             f"{ledger}: no 'entries:' list (research-gather schema required; "
             f"hand-curated 'sources:' debate ledgers are not convertible)"
         )
+    ledger_keys = {str(e.get("bibkey", "")).strip() for e in entries}
+    orphans: list[str] = []
     if bib.exists():
         existing = bib.read_text(encoding="utf-8")
         has_real_entries = bool(re.search(r"(?m)^@\w+\{", existing))
@@ -146,8 +271,15 @@ def convert(guide_dir: Path, force: bool = False) -> str:
                 f"{bib} is hand-authored (has @ entries, no GENERATED sentinel); "
                 f"rerun with --force to overwrite"
             )
+        orphans = [block for key, block in _entry_blocks(existing) if key not in ledger_keys]
+    rendered = render_bib(entries)  # ends "...lastentry\n"
+    if orphans:
+        text = (rendered.rstrip("\n") + "\n\n" + MANUAL_DIVIDER + "\n\n"
+                + "\n\n".join(orphans) + "\n")
+    else:
+        text = rendered + "\n"  # preserve the original "...lastentry\n\n" trailing
     bib.parent.mkdir(parents=True, exist_ok=True)
-    bib.write_text(render_bib(entries) + "\n", encoding="utf-8")
+    bib.write_text(text, encoding="utf-8")
     return str(bib)
 
 

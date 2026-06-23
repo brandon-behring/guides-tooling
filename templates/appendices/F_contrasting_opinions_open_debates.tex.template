@@ -1,0 +1,113 @@
+% Appendix F: Contrasting Opinions and Open Debates
+% Course: {{GUIDE_NAME}}
+%
+% ─── AUTHORING CONTRACT (Gold gate G7 F-check) ──────────────────────────────
+% This appendix is the honest counterweight to the book's strongest stances.
+% For each major position the book takes, lay out the strongest case AGAINST,
+% name where the book sits, and flag how well that stance holds up.
+%
+%   • ≥ 3 debate sections (D1, D2, D3, …). The MAJORITY must be genuinely
+%     contested — a section with no real opposing camp is a changelog entry,
+%     not a debate.
+%   • Each debate weaves five strands (see the D1 skeleton below):
+%       The debate · Position A · Position B · Where the book sits (+verdict)
+%       · Open question.
+%   • EVERY factual / quantitative / version / dated claim in a Position MUST
+%     carry an inline, RESOLVABLE citation (\parencite{key} → references.bib
+%     with an arXiv id / DOI / vendor permalink). The G7 F-check enforces a
+%     citation floor of max(6, 2 × debates): a tag is never a substitute for a
+%     source.
+%   • End each "Where the book sits" with a verdict flag:
+%       \emph{Verdict: well-supported}  — the book's stance holds up
+%       \emph{Verdict: contested}       — the field genuinely splits
+%       \emph{Verdict: dated}           — superseded since publication
+%   • Anchor every debate to a chapter with \cref{ch:M<n>} (and a {{LOS_PREFIX}}-n.m
+%     LOS where one applies). Voice is MEASURED — present pros/cons, no strong
+%     verdicts beyond what the cited sources support.
+%
+% Style exemplar (fully worked, 6 debates):
+%   evaluation-alignment-safety/manning_ai_model_evaluation/guide/appendices/F_contrasting_opinions_open_debates.tex
+% ────────────────────────────────────────────────────────────────────────────
+
+\chapter{Contrasting Opinions and Open Debates}
+\label{app:debates}
+
+This book is deliberately opinionated. % ← one sentence naming the book's overall stance.
+
+This appendix is the honest counterweight: for each major position the book
+takes, it lays out the strongest case \emph{against}, names where the book sits,
+and flags how well that stance holds up against the evidence available right now.
+
+Treat this as a \textbf{state-of-the-debate snapshot as of {{DATE}}}. The field
+moves fast enough that several of these debates will have shifted by the time you
+read this --- which is why each section ends with the open question rather than a
+settled verdict. Sources are tiered in prose so you can weight them yourself:
+
+\textbf{T1} is a peer-reviewed paper or first-party lab report;
+\textbf{T2} is vendor or first-party material with a commercial stake in the
+conclusion (weigh accordingly);
+\textbf{T3} is a practitioner essay.
+The \emph{verdict flags} (\emph{well-supported} / \emph{contested} / \emph{dated})
+are the book's self-assessment of its own position, not a claim of absolute truth.
+
+% =============================================================================
+\section{D1 --- <Pose the first debate as a question>}
+\label{sec:f-d1}
+% =============================================================================
+
+\textbf{The debate.} % Frame the tension and anchor it to a chapter, e.g.:
+% \Cref{ch:M1} rests on the premise that <X>. The open question is whether <Y>.
+
+\textbf{Position A (<skeptic/advocate>): <one-line claim>.}
+% State the strongest opposing case, WITH a resolvable citation:
+% A controlled study (T1) finds <result>~\parencite{author2025key}.
+
+\textbf{Position B (<bridge/challenger>): <one-line claim>.}
+% State the counter-camp, also cited:
+% More recent work (T1) argues <result>~\parencite{author2024key}.
+
+\textbf{Where the book sits.} % Name the book's actual position (cite the chapter),
+% then the verdict flag, e.g.:
+% The book claims <Z> (\cref{ch:M1}, {{LOS_PREFIX}}-1.7). \emph{Verdict: well-supported}.
+
+\textbf{Open question.} % The question the field has not yet settled.
+
+% =============================================================================
+\section{D2 --- <Second debate as a question>}
+\label{sec:f-d2}
+% =============================================================================
+
+\textbf{The debate.}
+
+\textbf{Position A (<...>): <claim>.} % ~\parencite{...}
+
+\textbf{Position B (<...>): <claim>.} % ~\parencite{...}
+
+\textbf{Where the book sits.} % … \emph{Verdict: contested}.
+
+\textbf{Open question.}
+
+% =============================================================================
+\section{D3 --- <Third debate as a question>}
+\label{sec:f-d3}
+% =============================================================================
+
+\textbf{The debate.}
+
+\textbf{Position A (<...>): <claim>.} % ~\parencite{...}
+
+\textbf{Position B (<...>): <claim>.} % ~\parencite{...}
+
+\textbf{Where the book sits.} % … \emph{Verdict: well-supported}.
+
+\textbf{Open question.}
+
+% =============================================================================
+\section{How to Read These Debates}
+\label{sec:f-synthesis}
+% =============================================================================
+
+% Close with the pattern that runs through the debates above: where is the book
+% well-supported (usually where it is conservative), and where is it contested
+% (usually where the field offers a cheaper/newer alternative the book omits)?
+% Tie back to the book's own thesis. ~150–250 words.

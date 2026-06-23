@@ -24,6 +24,7 @@ export PYTHONPATH := $(TOOLING):$(PYTHONPATH)
 .PHONY: cards qa-refs qa-los qa-presentation qa-health qa-ready decks
 cards:
 	$(PY) -m tooling.cards.extract_cards chapters/*.tex appendices/*.tex -o cards/
+	$(PY) -m tooling.cards.wrap_long_lines cards/
 qa-refs:
 	$(PY) -m tooling.validation.check_refs chapters/*.tex appendices/*.tex
 qa-los:

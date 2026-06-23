@@ -42,6 +42,8 @@
 % \include{appendices/B_gotchas}
 % \include{appendices/C_glossary}
 % \include{appendices/D_interview_prep}
+% \include{appendices/E_post_course_updates}
+% \include{appendices/F_contrasting_opinions_open_debates}
 
 \backmatter
 \printbibliography[heading=bibintoc]

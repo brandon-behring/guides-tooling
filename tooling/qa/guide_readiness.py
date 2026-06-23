@@ -32,9 +32,20 @@ except ImportError:
 
 # lualatex recovers from many real errors and still emits a PDF, so a build check
 # that only runs "test -f main.pdf" passes despite them. Scan the build log too.
-_LATEX_ERROR_RE = re.compile(
-    r"(?m)^(?:\! .*|.*\.tex:\d+: (?:Missing|Undefined|Extra|Runaway|LaTeX Error|invalid).*)$"
-)
+#
+# Match BOTH error renderings: a column-0 ``! `` line (TeX-native) and any
+# ``file:line: `` message (the ``file:line:error`` style these guides compile
+# with). The earlier keyword-restricted form silently missed "Misplaced
+# alignment tab character &." (a raw-``&`` bib breaker) because that phrase was
+# not in the keyword list -- so match any ``.tex:<n>: `` prefix instead.
+# The file:line arm anchors the PATH at the start of the line (not ``.*`` before
+# it) so a benign typeout/Info line that merely embeds a ``foo.tex:NN:`` location
+# (e.g. ``Package x Info: chapters/01.tex:12: ...``) is NOT matched — only a true
+# ``file:line:error``-style line, which lualatex emits starting with the path.
+# ``^\s*`` allows an indented error line; the path arm still anchors at the path
+# (after optional leading space) so a benign ``Package x Info: foo.tex:12:`` (text
+# before the path) does not match. Validated: 0 false positives on clean logs.
+_LATEX_ERROR_RE = re.compile(r"(?m)^\s*(?:\! .*|[^\s:]*\.tex:\d+: .*)$")
 
 
 @dataclass
