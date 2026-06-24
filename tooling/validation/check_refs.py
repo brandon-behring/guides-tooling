@@ -21,22 +21,11 @@ from collections import defaultdict
 from typing import NamedTuple
 
 
-def _strip_latex_comments(content: str) -> str:
-    r"""Blank out LaTeX comments (an unescaped ``%`` to end-of-line), preserving line structure.
-
-    A line starting with ``%`` becomes empty; ``code  % note`` keeps ``code  ``. ``\%`` (escaped) is
-    NOT a comment. Newlines are preserved so line numbers (and multi-line bodies) are unaffected — so a
-    commented-out ``\label``/``\ref`` no longer counts (guides-tooling#4 p11/p12).
-    """
-    out = []
-    for line in content.split("\n"):
-        cut = None
-        for i, ch in enumerate(line):
-            if ch == "%" and (i == 0 or line[i - 1] != "\\"):
-                cut = i
-                break
-        out.append(line if cut is None else line[:cut])
-    return "\n".join(out)
+# Comment-stripping lives in the shared _latex helper (single source — guides-tooling#4; cannot drift).
+try:
+    from _latex import strip_latex_comments  # run-as-script: this dir is on sys.path
+except ImportError:  # imported as tooling.validation.check_refs
+    from ._latex import strip_latex_comments
 
 
 class RefIssue(NamedTuple):
@@ -185,7 +174,7 @@ def process_files(filepaths: list[Path], verbose: bool = False) -> tuple[dict, l
             continue
 
         # Strip LaTeX comments so a commented-out \label/\ref is not counted (guides-tooling#4 p11/p12).
-        content = _strip_latex_comments(content)
+        content = strip_latex_comments(content)
 
         if verbose:
             print(f"Processing: {filepath}")

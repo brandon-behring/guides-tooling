@@ -14,6 +14,7 @@ Usage:
 """
 
 import argparse
+import glob
 import re
 import sys
 from collections import defaultdict
@@ -21,19 +22,11 @@ from pathlib import Path
 from typing import Any
 
 
-def _strip_latex_comments(content: str) -> str:
-    r"""Blank out LaTeX comments (unescaped ``%`` to EOL), preserving newlines so a commented-out
-    ``\los{...}`` is not counted while real (possibly multi-line) bodies are untouched. ``\%`` is not
-    a comment (guides-tooling#4 p15)."""
-    out = []
-    for line in content.split("\n"):
-        cut = None
-        for i, ch in enumerate(line):
-            if ch == "%" and (i == 0 or line[i - 1] != "\\"):
-                cut = i
-                break
-        out.append(line if cut is None else line[:cut])
-    return "\n".join(out)
+# Comment-stripping lives in the shared _latex helper (single source — guides-tooling#4; cannot drift).
+try:
+    from _latex import strip_latex_comments  # run-as-script: this dir is on sys.path
+except ImportError:  # imported as tooling.validation.extract_los
+    from ._latex import strip_latex_comments
 
 
 # Valid Bloom's taxonomy levels (extended set for course guides)
@@ -68,7 +61,7 @@ VOLUME_PREFIXES = {
 def extract_los_from_file(filepath: Path) -> list[dict[str, Any]]:
     """Extract all LOS definitions from a LaTeX file."""
     # Strip LaTeX comments so a commented-out \los{...} is not counted (guides-tooling#4 p15).
-    content = _strip_latex_comments(filepath.read_text(encoding='utf-8'))
+    content = strip_latex_comments(filepath.read_text(encoding='utf-8'))
     los_list = []
 
     # Pattern: \los{ID}{level}{statement}
@@ -171,7 +164,10 @@ def main():
     by_chapter = defaultdict(list)
 
     for file_pattern in args.files:
-        for filepath in Path('.').glob(file_pattern) if '*' in file_pattern else [Path(file_pattern)]:
+        # glob.has_magic catches ?, [] and * (not just *), so a non-magic literal path falls to the
+        # explicit-file branch and its absence is reported as an error (guides-tooling#4 p13/f4).
+        paths = Path('.').glob(file_pattern) if glob.has_magic(file_pattern) else [Path(file_pattern)]
+        for filepath in paths:
             if not filepath.exists():
                 # Explicitly-named missing file is an error, not a silent skip (guides-tooling#4 p13).
                 print(f"Error: File not found: {filepath}", file=sys.stderr)

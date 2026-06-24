@@ -91,3 +91,36 @@ def test_latex_section_source_attribution(tmp_path):  # p17
     r = _run(CHECK_LATEX, log, "--json", "--by-file")
     by_source = json.loads(r.stdout)["by_source"]
     assert any("sections/intro.tex" in s for s in by_source)  # attributed to sections/, not the log
+
+
+# --------------------------------------------------------------- adversarial-review fixes (f1/f3/f4)
+def test_check_refs_linebreak_then_comment_is_a_comment(tmp_path):  # f1: \\% starts a comment
+    f = tmp_path / "a.tex"
+    # `\\` is a LaTeX line-break; the following `%` IS a comment (even backslash run), so `\label{x}`
+    # on that tail is commented out and a live `\ref{x}` must be undefined. The pre-fix stripper looked
+    # only at the immediately-preceding char and wrongly treated `\\%` as an escaped percent.
+    f.write_text(r"\ref{x}" + "\n" + r"row end \\% \label{x}" + "\n")
+    r = _run(CHECK_REFS, f)
+    assert r.returncode == 1, r.stdout  # commented-out label → \ref{x} undefined
+    assert "Undefined reference" in r.stdout
+
+
+def test_check_refs_percent_in_url_is_not_a_comment(tmp_path):  # f3: %XX inside \url{} is literal
+    f = tmp_path / "a.tex"
+    # The %20 inside \url{} must NOT truncate the line; the \label{good} after it stays live so the
+    # \ref{good} resolves. The pre-fix stripper cut at the first %, dropping the label.
+    f.write_text(r"\url{http://example.com/a%20b} \label{good}" + "\n" + r"\ref{good}" + "\n")
+    r = _run(CHECK_REFS, f)
+    assert r.returncode == 0, r.stdout + r.stderr  # URL's % did not eat the trailing \label
+    assert "valid" in r.stdout.lower()
+
+
+def test_extract_los_question_mark_glob_is_expanded(tmp_path):  # f4: ?/[] are globs, not literals
+    (tmp_path / "ch_01.tex").write_text(r"\los{PY-1.1}{define}{Real one}" + "\n")
+    # `ch_0?.tex` has no `*` but IS a glob (glob.has_magic); it must expand to ch_01.tex, not be treated
+    # as a missing literal path (which the new fail-loud missing-file branch would turn into exit 1).
+    r = subprocess.run(
+        [sys.executable, str(EXTRACT_LOS), "ch_0?.tex"], capture_output=True, text=True, cwd=tmp_path
+    )
+    assert r.returncode == 0, r.stdout + r.stderr  # the ? glob expanded; no fatal "not found"
+    assert "Total LOS: 1" in r.stdout
