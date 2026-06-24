@@ -21,6 +21,13 @@ from collections import defaultdict
 from typing import NamedTuple
 
 
+# Comment-stripping lives in the shared _latex helper (single source — guides-tooling#4; cannot drift).
+try:
+    from _latex import strip_latex_comments  # run-as-script: this dir is on sys.path
+except ImportError:  # imported as tooling.validation.check_refs
+    from ._latex import strip_latex_comments
+
+
 class RefIssue(NamedTuple):
     """A cross-reference issue found during validation."""
     file: str
@@ -79,10 +86,7 @@ def extract_refs(content: str, filepath: str) -> list[tuple[int, str, str]]:
     ]
 
     for i, line in enumerate(content.split('\n'), 1):
-        # Skip comments
-        if line.strip().startswith('%'):
-            continue
-
+        # Comments are already stripped upstream (process_files); scan the live text.
         for pattern, ref_type in patterns:
             for match in re.finditer(pattern, line):
                 label = match.group(1)
@@ -145,8 +149,16 @@ def process_files(filepaths: list[Path], verbose: bool = False) -> tuple[dict, l
 
     for filepath in filepaths:
         if not filepath.exists():
-            if verbose:
-                print(f"Warning: File not found: {filepath}", file=sys.stderr)
+            # An explicitly-named file that does not exist is an ERROR, not a silent skip — glob
+            # expansion only ever yields existing paths, so a missing path was named explicitly.
+            # Fail loud (guides-tooling#4 p14).
+            file_issues.append(RefIssue(
+                file=str(filepath),
+                line=0,
+                ref_type='file',
+                label='',
+                message=f"File not found: {filepath}"
+            ))
             continue
 
         try:
@@ -160,6 +172,9 @@ def process_files(filepaths: list[Path], verbose: bool = False) -> tuple[dict, l
                 message=f"Could not read file: {e}"
             ))
             continue
+
+        # Strip LaTeX comments so a commented-out \label/\ref is not counted (guides-tooling#4 p11/p12).
+        content = strip_latex_comments(content)
 
         if verbose:
             print(f"Processing: {filepath}")

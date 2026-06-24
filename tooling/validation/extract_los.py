@@ -14,11 +14,20 @@ Usage:
 """
 
 import argparse
+import glob
 import re
 import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
+
+
+# Comment-stripping lives in the shared _latex helper (single source — guides-tooling#4; cannot drift).
+try:
+    from _latex import strip_latex_comments  # run-as-script: this dir is on sys.path
+except ImportError:  # imported as tooling.validation.extract_los
+    from ._latex import strip_latex_comments
+
 
 # Valid Bloom's taxonomy levels (extended set for course guides)
 # See CLAUDE.md "Verified LOS Verb Set" for the full canonical list
@@ -51,7 +60,8 @@ VOLUME_PREFIXES = {
 
 def extract_los_from_file(filepath: Path) -> list[dict[str, Any]]:
     """Extract all LOS definitions from a LaTeX file."""
-    content = filepath.read_text(encoding='utf-8')
+    # Strip LaTeX comments so a commented-out \los{...} is not counted (guides-tooling#4 p15).
+    content = strip_latex_comments(filepath.read_text(encoding='utf-8'))
     los_list = []
 
     # Pattern: \los{ID}{level}{statement}
@@ -154,9 +164,14 @@ def main():
     by_chapter = defaultdict(list)
 
     for file_pattern in args.files:
-        for filepath in Path('.').glob(file_pattern) if '*' in file_pattern else [Path(file_pattern)]:
+        # glob.has_magic catches ?, [] and * (not just *), so a non-magic literal path falls to the
+        # explicit-file branch and its absence is reported as an error (guides-tooling#4 p13/f4).
+        paths = Path('.').glob(file_pattern) if glob.has_magic(file_pattern) else [Path(file_pattern)]
+        for filepath in paths:
             if not filepath.exists():
-                continue
+                # Explicitly-named missing file is an error, not a silent skip (guides-tooling#4 p13).
+                print(f"Error: File not found: {filepath}", file=sys.stderr)
+                sys.exit(1)
 
             volume = get_volume_from_path(filepath)
             los_list = extract_los_from_file(filepath)
