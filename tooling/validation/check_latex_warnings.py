@@ -35,13 +35,14 @@ class WarningResult(NamedTuple):
 
 # ── Patterns ───────────────────────────────────────────────────────────────
 OVERFULL_RE = re.compile(r"Overfull \\hbox.*?(\d+\.?\d*)pt too wide")
+OVERFULL_VBOX_RE = re.compile(r"Overfull \\vbox.*?(\d+\.?\d*)pt too high")
 TCOLORBOX_RE = re.compile(r"upper box part has become overfull")
 UNDEF_CITATION_RE = re.compile(r"Citation.*undefined", re.IGNORECASE)
 UNDEF_REF_RE = re.compile(r"Reference.*undefined", re.IGNORECASE)
 MARGINPAR_RE = re.compile(r"Marginpar.*moved")
 UNDERFULL_RE = re.compile(r"Underfull \\hbox")
 AUTHORED_SOURCE_RE = re.compile(
-    r"(?:\./)?(?:chapters|appendices|shared)/[^()\s]+\.(?:tex|sty)|"
+    r"(?:\./)?(?:chapters|appendices|shared|sections)/[^()\s]+\.(?:tex|sty)|"
     r"(?:\./)?notebook-extensions\.sty"
 )
 GENERATED_SOURCE_RE = re.compile(r"(?:\./)?([^()\s]+\.(ind|toc))")
@@ -65,6 +66,7 @@ def parse_log(logfile: str) -> dict[str, list[WarningResult]]:
     results: dict[str, list[WarningResult]] = {
         "overfull_50pt": [],
         "overfull_10_49pt": [],
+        "overfull_vbox": [],
         "overfull_le3pt": [],
         "tcolorbox": [],
         "undef_citations": [],
@@ -75,66 +77,101 @@ def parse_log(logfile: str) -> dict[str, list[WarningResult]]:
 
     current_source = logfile
     with open(logfile, encoding="utf-8", errors="replace") as f:
-        for line_num, line in enumerate(f, 1):
-            generated_sources = GENERATED_SOURCE_RE.findall(line)
-            if generated_sources:
-                current_source = normalize_source(generated_sources[-1][0])
+        lines = f.read().split("\n")
 
-            authored_sources = AUTHORED_SOURCE_RE.findall(line)
-            if authored_sources:
-                current_source = normalize_source(authored_sources[-1])
+    # Index-based walk (not a per-line for-loop) so a line-WRAPPED "LaTeX Warning:" can absorb its
+    # continuation line(s) before we match (guides-tooling#4 p16).
+    i, n = 0, len(lines)
+    while i < n:
+        line = lines[i]
+        line_num = i + 1
+        i += 1
 
-            m = OVERFULL_RE.search(line)
-            if m:
-                pt = float(m.group(1))
-                if pt >= 50:
-                    results["overfull_50pt"].append(
-                        WarningResult(logfile, line_num, current_source, "overfull_50pt", line.strip())
-                    )
-                elif pt >= 10:
-                    results["overfull_10_49pt"].append(
-                        WarningResult(logfile, line_num, current_source, "overfull_10_49pt", line.strip())
-                    )
-                elif pt <= 3:
-                    results["overfull_le3pt"].append(
-                        WarningResult(logfile, line_num, current_source, "overfull_le3pt", line.strip())
-                    )
-                # 3 < pt < 10 falls into 10-49 bucket implicitly? No — gap.
-                # Actually 3 < pt < 10 is minor, track with 10-49 for simplicity.
-                else:
-                    results["overfull_10_49pt"].append(
-                        WarningResult(logfile, line_num, current_source, "overfull_10_49pt", line.strip())
-                    )
-                continue
+        generated_sources = GENERATED_SOURCE_RE.findall(line)
+        if generated_sources:
+            current_source = normalize_source(generated_sources[-1][0])
+        authored_sources = AUTHORED_SOURCE_RE.findall(line)
+        if authored_sources:
+            current_source = normalize_source(authored_sources[-1])
 
-            if TCOLORBOX_RE.search(line):
-                results["tcolorbox"].append(
-                    WarningResult(logfile, line_num, current_source, "tcolorbox", line.strip())
+        m = OVERFULL_RE.search(line)
+        if m:
+            pt = float(m.group(1))
+            if pt >= 50:
+                results["overfull_50pt"].append(
+                    WarningResult(logfile, line_num, current_source, "overfull_50pt", line.strip())
                 )
-                continue
+            elif pt >= 10:
+                results["overfull_10_49pt"].append(
+                    WarningResult(logfile, line_num, current_source, "overfull_10_49pt", line.strip())
+                )
+            elif pt <= 3:
+                results["overfull_le3pt"].append(
+                    WarningResult(logfile, line_num, current_source, "overfull_le3pt", line.strip())
+                )
+            else:
+                # 3 < pt < 10 is minor; track with the 10-49 bucket.
+                results["overfull_10_49pt"].append(
+                    WarningResult(logfile, line_num, current_source, "overfull_10_49pt", line.strip())
+                )
+            continue
 
-            if UNDEF_CITATION_RE.search(line):
+        mv = OVERFULL_VBOX_RE.search(line)
+        if mv:
+            results["overfull_vbox"].append(
+                WarningResult(logfile, line_num, current_source, "overfull_vbox", line.strip())
+            )
+            continue
+
+        if TCOLORBOX_RE.search(line):
+            results["tcolorbox"].append(
+                WarningResult(logfile, line_num, current_source, "tcolorbox", line.strip())
+            )
+            continue
+
+        # Single-line undefined citation/reference (the common case — a short label fits on one line).
+        if UNDEF_CITATION_RE.search(line):
+            results["undef_citations"].append(
+                WarningResult(logfile, line_num, current_source, "undef_citations", line.strip())
+            )
+            continue
+        if UNDEF_REF_RE.search(line):
+            results["undef_references"].append(
+                WarningResult(logfile, line_num, current_source, "undef_references", line.strip())
+            )
+            continue
+
+        # WRAPPED undefined citation/reference: LaTeX wraps long warnings at max_print_line, so a
+        # "Reference `LONGLABEL' on page N" can carry its "undefined on input line M" onto the next
+        # line(s). Join the warning block (until a blank line), re-check, then skip the consumed
+        # continuation lines. Gated on "Reference `"/"Citation `" so marginpar/tcolorbox warnings (also
+        # "...Warning:" lines) still fall through to their own handlers below (guides-tooling#4 p16).
+        if "Warning:" in line and ("Reference `" in line or "Citation `" in line):
+            buf = [line.strip()]
+            while i < n and lines[i].strip() != "":
+                buf.append(lines[i].strip())
+                i += 1
+            text = " ".join(buf)
+            if UNDEF_CITATION_RE.search(text):
                 results["undef_citations"].append(
-                    WarningResult(logfile, line_num, current_source, "undef_citations", line.strip())
+                    WarningResult(logfile, line_num, current_source, "undef_citations", text[:200])
                 )
-                continue
-
-            if UNDEF_REF_RE.search(line):
+            elif UNDEF_REF_RE.search(text):
                 results["undef_references"].append(
-                    WarningResult(logfile, line_num, current_source, "undef_references", line.strip())
+                    WarningResult(logfile, line_num, current_source, "undef_references", text[:200])
                 )
-                continue
+            continue
 
-            if MARGINPAR_RE.search(line):
-                results["marginpar"].append(
-                    WarningResult(logfile, line_num, current_source, "marginpar", line.strip())
-                )
-                continue
+        if MARGINPAR_RE.search(line):
+            results["marginpar"].append(
+                WarningResult(logfile, line_num, current_source, "marginpar", line.strip())
+            )
+            continue
 
-            if UNDERFULL_RE.search(line):
-                results["underfull"].append(
-                    WarningResult(logfile, line_num, current_source, "underfull", line.strip())
-                )
+        if UNDERFULL_RE.search(line):
+            results["underfull"].append(
+                WarningResult(logfile, line_num, current_source, "underfull", line.strip())
+            )
 
     return results
 
@@ -155,6 +192,7 @@ def print_summary(results: dict[str, list[WarningResult]], threshold_red: int) -
     divider = "\u2550" * 60
     n50 = len(results["overfull_50pt"])
     n10 = len(results["overfull_10_49pt"])
+    nvbox = len(results["overfull_vbox"])
     ntcb = len(results["tcolorbox"])
     ncit = len(results["undef_citations"])
     nref = len(results["undef_references"])
@@ -168,6 +206,7 @@ def print_summary(results: dict[str, list[WarningResult]], threshold_red: int) -
     print(f"\nLaTeX Presentation Check\n{divider}")
     print(f"  Overfull >=50pt:      {n50:>3}  (threshold: {threshold_red})   {ok if n50 <= threshold_red else fail}")
     print(f"  Overfull 10-49pt:     {n10:>3}  (info)")
+    print(f"  Overfull \\vbox:       {nvbox:>3}  (info)")
     print(f"  tcolorbox overflow:   {ntcb:>3}  (info)")
     print(f"  Undefined citations:  {ncit:>3}  (threshold: 0)   {ok if ncit == 0 else fail}")
     print(f"  Undefined references: {nref:>3}  (threshold: 0)   {ok if nref == 0 else fail}")
@@ -216,12 +255,14 @@ def print_by_source(results: dict[str, list[WarningResult]]) -> None:
         )
 
     print("\nPer-source summary")
-    print("Source | >=50pt | 10-49pt | tcolorbox | <=3pt | underfull")
-    print("-" * 72)
+    print("Source | >=50pt | undef_ref | undef_cit | 10-49pt | tcolorbox | <=3pt | underfull")
+    print("-" * 88)
     for source, counts in sorted(summary.items(), key=lambda item: weight(item[1]), reverse=True):
         print(
             f"{source} | "
             f"{counts.get('overfull_50pt', 0):>6} | "
+            f"{counts.get('undef_references', 0):>9} | "
+            f"{counts.get('undef_citations', 0):>9} | "
             f"{counts.get('overfull_10_49pt', 0):>7} | "
             f"{counts.get('tcolorbox', 0):>9} | "
             f"{counts.get('overfull_le3pt', 0):>5} | "
@@ -234,6 +275,7 @@ def print_json(results: dict[str, list[WarningResult]]) -> None:
     data = {
         "overfull_50pt": len(results["overfull_50pt"]),
         "overfull_10_49pt": len(results["overfull_10_49pt"]),
+        "overfull_vbox": len(results["overfull_vbox"]),
         "tcolorbox": len(results["tcolorbox"]),
         "undef_citations": len(results["undef_citations"]),
         "undef_references": len(results["undef_references"]),
@@ -250,6 +292,7 @@ def print_json_by_source(results: dict[str, list[WarningResult]]) -> None:
         "totals": {
             "overfull_50pt": len(results["overfull_50pt"]),
             "overfull_10_49pt": len(results["overfull_10_49pt"]),
+            "overfull_vbox": len(results["overfull_vbox"]),
             "tcolorbox": len(results["tcolorbox"]),
             "undef_citations": len(results["undef_citations"]),
             "undef_references": len(results["undef_references"]),

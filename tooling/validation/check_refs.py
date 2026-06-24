@@ -21,6 +21,24 @@ from collections import defaultdict
 from typing import NamedTuple
 
 
+def _strip_latex_comments(content: str) -> str:
+    r"""Blank out LaTeX comments (an unescaped ``%`` to end-of-line), preserving line structure.
+
+    A line starting with ``%`` becomes empty; ``code  % note`` keeps ``code  ``. ``\%`` (escaped) is
+    NOT a comment. Newlines are preserved so line numbers (and multi-line bodies) are unaffected — so a
+    commented-out ``\label``/``\ref`` no longer counts (guides-tooling#4 p11/p12).
+    """
+    out = []
+    for line in content.split("\n"):
+        cut = None
+        for i, ch in enumerate(line):
+            if ch == "%" and (i == 0 or line[i - 1] != "\\"):
+                cut = i
+                break
+        out.append(line if cut is None else line[:cut])
+    return "\n".join(out)
+
+
 class RefIssue(NamedTuple):
     """A cross-reference issue found during validation."""
     file: str
@@ -79,10 +97,7 @@ def extract_refs(content: str, filepath: str) -> list[tuple[int, str, str]]:
     ]
 
     for i, line in enumerate(content.split('\n'), 1):
-        # Skip comments
-        if line.strip().startswith('%'):
-            continue
-
+        # Comments are already stripped upstream (process_files); scan the live text.
         for pattern, ref_type in patterns:
             for match in re.finditer(pattern, line):
                 label = match.group(1)
@@ -145,8 +160,16 @@ def process_files(filepaths: list[Path], verbose: bool = False) -> tuple[dict, l
 
     for filepath in filepaths:
         if not filepath.exists():
-            if verbose:
-                print(f"Warning: File not found: {filepath}", file=sys.stderr)
+            # An explicitly-named file that does not exist is an ERROR, not a silent skip — glob
+            # expansion only ever yields existing paths, so a missing path was named explicitly.
+            # Fail loud (guides-tooling#4 p14).
+            file_issues.append(RefIssue(
+                file=str(filepath),
+                line=0,
+                ref_type='file',
+                label='',
+                message=f"File not found: {filepath}"
+            ))
             continue
 
         try:
@@ -160,6 +183,9 @@ def process_files(filepaths: list[Path], verbose: bool = False) -> tuple[dict, l
                 message=f"Could not read file: {e}"
             ))
             continue
+
+        # Strip LaTeX comments so a commented-out \label/\ref is not counted (guides-tooling#4 p11/p12).
+        content = _strip_latex_comments(content)
 
         if verbose:
             print(f"Processing: {filepath}")

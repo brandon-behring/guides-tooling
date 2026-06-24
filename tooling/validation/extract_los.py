@@ -20,6 +20,22 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+
+def _strip_latex_comments(content: str) -> str:
+    r"""Blank out LaTeX comments (unescaped ``%`` to EOL), preserving newlines so a commented-out
+    ``\los{...}`` is not counted while real (possibly multi-line) bodies are untouched. ``\%`` is not
+    a comment (guides-tooling#4 p15)."""
+    out = []
+    for line in content.split("\n"):
+        cut = None
+        for i, ch in enumerate(line):
+            if ch == "%" and (i == 0 or line[i - 1] != "\\"):
+                cut = i
+                break
+        out.append(line if cut is None else line[:cut])
+    return "\n".join(out)
+
+
 # Valid Bloom's taxonomy levels (extended set for course guides)
 # See CLAUDE.md "Verified LOS Verb Set" for the full canonical list
 VALID_LEVELS = {
@@ -51,7 +67,8 @@ VOLUME_PREFIXES = {
 
 def extract_los_from_file(filepath: Path) -> list[dict[str, Any]]:
     """Extract all LOS definitions from a LaTeX file."""
-    content = filepath.read_text(encoding='utf-8')
+    # Strip LaTeX comments so a commented-out \los{...} is not counted (guides-tooling#4 p15).
+    content = _strip_latex_comments(filepath.read_text(encoding='utf-8'))
     los_list = []
 
     # Pattern: \los{ID}{level}{statement}
@@ -156,7 +173,9 @@ def main():
     for file_pattern in args.files:
         for filepath in Path('.').glob(file_pattern) if '*' in file_pattern else [Path(file_pattern)]:
             if not filepath.exists():
-                continue
+                # Explicitly-named missing file is an error, not a silent skip (guides-tooling#4 p13).
+                print(f"Error: File not found: {filepath}", file=sys.stderr)
+                sys.exit(1)
 
             volume = get_volume_from_path(filepath)
             los_list = extract_los_from_file(filepath)
