@@ -99,12 +99,20 @@ REPORTS_DIR = paths.host_root() / "reports"
 # dupes), which is a content-remediation / threshold-calibration decision, not a
 # tooling toggle. Flip these two to ["--strict"] once that pass lands. They are
 # still invoked (flagless) so a future leading "FAIL" line is caught, not skipped.
+#
+# audit_checkpoint_originality is likewise registered FLAGLESS during the
+# warning-first rollout of the template-tailing detector: in advisory mode it
+# reports but never emits a "FAIL" line, so it gates nothing (Gold count is
+# unchanged). Flip it to ["--strict"] -- and relabel G2 "14-audit" -- once the
+# checkpoint sweep clears the fleet to zero template-tailed items.
 GUIDE_AUDITS: dict[str, list[str]] = {
     "audit_atomicity": ["--check"],
     "audit_box_styles": ["--strict"],       # gated: every used tcolorbox style is defined
     "audit_card_presentation": [],          # FAIL via ^FAIL line; exits 0
     "audit_card_quality": ["--strict"],
     "audit_checkpoint_bloom_verbs": ["--strict"],  # gated: 0 duplicated-verb LOS
+    "audit_checkpoint_originality": [],     # advisory (warning-first): 0 template-tailed
+                                            # checkpoints; flip to ["--strict"] post-sweep
     "audit_content_freshness": ["--strict"],
     "audit_content_quality": ["--strict"],
     "audit_crossref_quality": [],           # exits 1 on broken refs
