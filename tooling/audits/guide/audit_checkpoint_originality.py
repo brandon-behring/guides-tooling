@@ -23,24 +23,30 @@ Two complementary signals; a hit on EITHER flags the item:
 
   (B) **Known cross-guide suffix** -- the item's trailing ``SUFFIX_WORDS`` normalized
       words match a tail in :data:`CHECKPOINT_TEMPLATE_SUFFIXES`, a data-derived set
-      of suffixes that recur across ``>=2`` DIFFERENT guides. Cross-guide recurrence
-      is boilerplate regardless of topic, and catches the singletons (a tail used
-      only 1-2x in a given guide) that signal A misses.
+      of suffixes that recur across ``>=2`` DIFFERENT guides (regenerate/verify with
+      ``--suffix-freq``). Cross-guide recurrence is boilerplate regardless of topic,
+      and catches the singletons (a tail used only 1-2x in a given guide) that
+      signal A misses.
   (A) **Intra-guide shared-suffix cluster** -- ``>=MIN_CLUSTER`` checkpoint items in
       the SAME guide share the trailing ``SUFFIX_WORDS`` normalized words. Catches
       guide-local templates (incl. topic-specific ones absent from the cross-guide
       set), and is self-maintaining as new padding appears.
 
-Counts are over UNIQUE checkpoint prompts: a checkpoint box may repeat ``\item[LOS]``
-in a paired ``\textbf{Answers:}`` enumerate, so items are de-duplicated by LOS-ID
-(keeping the first = the prompt) before counting/flagging.
+Counts are over checkpoint PROMPTS. A checkpoint box may repeat ``\item[LOS]`` in a
+paired ``\textbf{Answers:}`` enumerate; an answer-key item -- one inside the Answers
+enumerate whose LOS-ID ALSO appears as a question -- is excluded. This is NOT a LOS-ID
+dedup (a question list may legitimately reuse a LOS-ID for two distinct prompts, which
+dedup would wrongly collapse) and NOT a blunt "everything after Answers" cut (some
+guides tag the LOS on items that live *inside* the answer enumerate, which that rule
+would wrongly drop) -- only a true positional answer key is removed.
 
 Usage::
 
     python -m tooling.audits.guide.audit_checkpoint_originality --guide manning_<slug>
     python -m tooling.audits.guide.audit_checkpoint_originality --guide manning_<slug> --strict
     python -m tooling.audits.guide.audit_checkpoint_originality --guide manning_<slug> --json
-    python -m tooling.audits.guide.audit_checkpoint_originality --fleet   # ranked worklist
+    python -m tooling.audits.guide.audit_checkpoint_originality --fleet         # ranked worklist
+    python -m tooling.audits.guide.audit_checkpoint_originality --suffix-freq   # derive the blocklist
 
 Registered FLAGLESS (advisory) in ``audit_gold.GUIDE_AUDITS`` during the
 warning-first rollout: without ``--strict`` it reports but exits 0 and prints no
@@ -74,10 +80,10 @@ MIN_CLUSTER = 3
 # Data-derived 2026-06-26 (fleet count / #guides in comments): 10-word trailing
 # suffixes that recur across >=2 DIFFERENT guides. Cross-guide recurrence across
 # unrelated topics is boilerplate; this is what catches a tail used only 1-2x in a
-# given guide (so it escapes signal A's >=3 intra-guide cluster). Regenerate with
-# the fleet suffix-frequency analysis if the corpus changes. Normalized exactly as
-# _norm_words() emits (lowercased, hyphens + punctuation -> space, 1-char tokens
-# dropped, trailing LOS-echo stripped).
+# given guide (so it escapes signal A's >=3 intra-guide cluster). REGENERATE / verify
+# with `--suffix-freq` if the corpus changes. Normalized exactly as _norm_words()
+# emits (lowercased, hyphens + punctuation -> space, 1-char tokens dropped, trailing
+# LOS-echo stripped).
 CHECKPOINT_TEMPLATE_SUFFIXES: frozenset[str] = frozenset({
     "that it worked and one thing that can go wrong",                        # 92 / 18 guides
     "flips the trade off and the mechanism behind the flip",                 # 63 / 17 guides
@@ -93,12 +99,41 @@ CHECKPOINT_TEMPLATE_SUFFIXES: frozenset[str] = frozenset({
 # A trailing right-aligned LOS echo "\hfill\textit{(DLJ-6.6)}" some guides append to
 # every checkpoint. Stripped BEFORE normalization so its parenthesized LOS (whose
 # letters survive as a stray token, e.g. "dlj") cannot shift the suffix window or
-# defeat a cross-guide suffix match.
-_LOS_ECHO_RE = re.compile(r"\\hfill\s*\\textit\s*\{\s*\([^)]*\)\s*\}\s*$")
+# defeat a cross-guide suffix match. Tolerates a trailing period and/or comment.
+_LOS_ECHO_RE = re.compile(r"\\hfill\s*\\textit\s*\{\s*\([^)]*\)\s*\}\s*\.?\s*(?:%[^\n]*)?$")
 # \texttt[opt]{...} etc. -- a macro NAME plus an optional [..] arg; the {..} arg
 # content is preserved (only the braces are dropped) so prose inside \textbf{...}
 # still counts toward the suffix.
 _MACRO_RE = re.compile(r"\\[a-zA-Z]+\*?(\[[^\]]*\])?")
+
+# Checkpoint-box + "Answers:" boundaries, mirroring tooling.cards.extract_cards.
+_ANSWERS_MARK_RE = re.compile(
+    r"\\(?:textbf|paragraph|subparagraph)\s*\{\s*Answers?:?\s*\}")
+_CHECKPOINTBOX_ENV_RE = re.compile(
+    r"\\begin\{checkpointbox\}.*?\\end\{checkpointbox\}", re.DOTALL)
+_TCOLORBOX_OPEN_RE = re.compile(r"\\begin\{tcolorbox\}\[checkpointbox")
+_TCOLORBOX_DELIM_RE = re.compile(r"\\(begin|end)\{tcolorbox\}")
+
+
+def _checkpoint_box_spans(content: str) -> list[tuple[int, int]]:
+    """``(start, end)`` of each checkpoint box. The tcolorbox form balances nested
+    ``\\begin/\\end{tcolorbox}`` so a nested box (e.g. a debug aside) before the
+    Answers marker cannot truncate the span (which would defeat answer-key exclusion).
+    """
+    spans: list[tuple[int, int]] = []
+    # \begin{checkpointbox}..\end{checkpointbox}: its own \end token, not truncatable
+    # by a nested tcolorbox.
+    spans.extend((m.start(), m.end()) for m in _CHECKPOINTBOX_ENV_RE.finditer(content))
+    # \begin{tcolorbox}[checkpointbox..]: walk \begin/\end{tcolorbox} with a depth count.
+    for opener in _TCOLORBOX_OPEN_RE.finditer(content):
+        depth, end = 1, len(content)
+        for t in _TCOLORBOX_DELIM_RE.finditer(content, opener.end()):
+            depth += 1 if t.group(1) == "begin" else -1
+            if depth == 0:
+                end = t.end()
+                break
+        spans.append((opener.start(), end))
+    return spans
 
 
 def _norm_words(body: str) -> list[str]:
@@ -118,6 +153,47 @@ def _norm_words(body: str) -> list[str]:
     return [w for w in s.split() if len(w) > 1]
 
 
+def _answer_key_offsets(content: str) -> set[int]:
+    """Start offsets of answer-key ``\\item[LOS]`` items.
+
+    A true answer key is an ``\\item[LOS]`` inside a box's Answers enumerate whose
+    LOS-ID ALSO appears as a question in the same box (a positional answer to a
+    prompt) -- those are excluded. An ``\\item[LOS]`` whose LOS appears ONLY in the
+    answer region is a genuine (if oddly placed) prompt -- some guides tag the LOS on
+    items inside the answer enumerate -- and is kept; a question-region ``\\item[LOS]``
+    is always kept, so a list may reuse a LOS-ID for two distinct prompts.
+    """
+    offsets: set[int] = set()
+    for box_start, box_end in _checkpoint_box_spans(content):
+        marker = _ANSWERS_MARK_RE.search(content, box_start, box_end)
+        if not marker:
+            continue
+        q_los = {m.group(1)
+                 for m in CHECKPOINT_ITEM_RE.finditer(content[box_start:marker.start()])}
+        for m in CHECKPOINT_ITEM_RE.finditer(content[marker.start():box_end]):
+            if m.group(1) in q_los:
+                offsets.add(marker.start() + m.start())
+    return offsets
+
+
+def _guide_items(guide_dir) -> list[tuple[str, int, str, list[str]]]:
+    """Every checkpoint PROMPT (answer-key items excluded) as (file, line, los, words)."""
+    items: list[tuple[str, int, str, list[str]]] = []
+    for tex in chapter_files(guide_dir):
+        try:
+            content = tex.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        answer_keys = _answer_key_offsets(content)
+        for m in CHECKPOINT_ITEM_RE.finditer(content):
+            if m.start() in answer_keys:
+                continue  # a positional answer key, not a prompt
+            words = _norm_words(m.group(2))
+            line = content[: m.start()].count("\n") + 1
+            items.append((tex.name, line, m.group(1), words))
+    return items
+
+
 @dataclass
 class Templated:
     file: str
@@ -128,24 +204,8 @@ class Templated:
 
 
 def find_template_tails(guide_dir) -> tuple[int, list[Templated]]:
-    """Return ``(unique_checkpoint_prompts, templated_items)`` for one guide."""
-    # (file, line, los_id, normalized words), de-duplicated by LOS-ID so a paired
-    # "Answers:" enumerate that repeats \item[LOS] is not counted as a 2nd prompt.
-    items: list[tuple[str, int, str, list[str]]] = []
-    seen: set[str] = set()
-    for tex in chapter_files(guide_dir):
-        try:
-            content = tex.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
-            continue
-        for m in CHECKPOINT_ITEM_RE.finditer(content):
-            los_id = m.group(1)
-            if los_id in seen:        # keep the first occurrence (the prompt)
-                continue
-            seen.add(los_id)
-            words = _norm_words(m.group(2))
-            line = content[: m.start()].count("\n") + 1
-            items.append((tex.name, line, los_id, words))
+    """Return ``(checkpoint_prompts, templated_items)`` for one guide."""
+    items = _guide_items(guide_dir)
 
     # Trailing SUFFIX_WORDS-word key per item (None if the prompt is shorter).
     suffixes = [
@@ -189,6 +249,25 @@ def _reason_tally(templated: list[Templated]) -> str:
         counts.items(), key=lambda kv: kv[1], reverse=True))
 
 
+def fleet_suffix_frequency() -> str:
+    """Dump the cross-guide trailing-suffix frequencies CHECKPOINT_TEMPLATE_SUFFIXES is
+    derived from: every SUFFIX_WORDS-word suffix shared across >=2 guides, worst-first.
+    Run this to regenerate / verify the blocklist when the corpus changes."""
+    stats: dict[str, dict] = defaultdict(lambda: {"count": 0, "guides": set()})
+    for gd in guide_dirs():
+        for (_f, _l, _id, words) in _guide_items(gd):
+            if len(words) >= SUFFIX_WORDS:
+                suf = " ".join(words[-SUFFIX_WORDS:])
+                stats[suf]["count"] += 1
+                stats[suf]["guides"].add(gd.name)
+    rows = sorted(((s, v) for s, v in stats.items() if len(v["guides"]) >= 2),
+                  key=lambda kv: kv[1]["count"], reverse=True)
+    out = [f"{v['count']:>4}  {len(v['guides']):>2} guides  {s!r}" for s, v in rows]
+    out.append("")
+    out.append(f"{len(rows)} cross-guide (>=2 guides) suffix(es) = CHECKPOINT_TEMPLATE_SUFFIXES.")
+    return "\n".join(out)
+
+
 def fleet_table() -> str:
     """A ranked (worst-first) markdown worklist over the whole fleet."""
     rows: list[tuple[str, int, int, float, str]] = []
@@ -222,24 +301,30 @@ def main() -> None:
     ap.add_argument("--guide", help="guide slug to audit (e.g. manning_<slug>)")
     ap.add_argument("--fleet", action="store_true",
                     help="rank the whole fleet worst-first as a markdown table")
+    ap.add_argument("--suffix-freq", action="store_true",
+                    help="dump cross-guide suffix frequencies (regenerate the blocklist)")
     ap.add_argument("--json", action="store_true", help="emit JSON (with --guide)")
     ap.add_argument("--strict", "--check", dest="strict", action="store_true",
                     help="exit 1 if any checkpoint item is template-tailed")
     args = ap.parse_args()
+
+    if args.suffix_freq:
+        print(fleet_suffix_frequency())
+        return
 
     if args.fleet:
         print(fleet_table())
         return
 
     if not args.guide:
-        ap.error("one of --guide or --fleet is required")
+        ap.error("one of --guide, --fleet or --suffix-freq is required")
 
     guide_dir = guide_dir_for_slug(args.guide)
     if guide_dir is None or not guide_dir.is_dir():
-        # Message matches audit_gold.NOT_FOUND_RE. NB: in audit_gold's G2 dispatch a
-        # NOT_FOUND match records an out-of-scope note (it does not contribute a
-        # template-tailing FAIL). In a real fleet run every discovered slug resolves,
-        # so this branch is unreachable there.
+        # Message matches audit_gold.NOT_FOUND_RE. NB: if this branch were reached
+        # under audit_gold's G2 dispatch it WOULD register a G2 failure (NOT_FOUND is
+        # appended to failures), but every slug audit_gold discovers resolves, so it
+        # is unreachable in a real fleet run.
         print(f"Error: guide not found for slug: {args.guide}", file=sys.stderr)
         sys.exit(2)
 

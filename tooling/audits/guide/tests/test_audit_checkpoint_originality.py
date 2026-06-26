@@ -94,9 +94,10 @@ def test_hyphenation_insensitive_known_tail(tmp_path):
     assert reasons["W-1.1"] == "known-tail"
 
 
-def test_answer_key_items_deduped_by_los(tmp_path):
+def test_answer_key_items_excluded_structurally(tmp_path):
     # D1: a checkpointbox repeats \item[LOS] in a paired "Answers:" enumerate.
-    # Items must be de-duplicated by LOS-ID (keep the prompt), not counted twice.
+    # Answer-key items (after the Answers marker) must be excluded structurally so
+    # the box is not double-counted.
     body = r"""
 \begin{tcolorbox}[checkpointbox]
 \begin{enumerate}
@@ -111,8 +112,33 @@ def test_answer_key_items_deduped_by_los(tmp_path):
 \end{tcolorbox}
 """
     total, ids, _ = _flagged(_make_guide(tmp_path, body))
-    assert total == 2          # X-1.1 + X-1.2, NOT 4 (answer keys deduped)
+    assert total == 2          # X-1.1 + X-1.2, NOT 4 (the 2 answer keys are excluded)
     assert ids == []           # genuine prompts, none templated
+
+
+def test_reused_los_distinct_prompts_both_kept(tmp_path):
+    # D1 fix (the bug the prior LOS-dedup introduced): a question list may legitimately
+    # reuse a LOS-ID for two DISTINCT prompts (real case: grokking_ml_2e GML-7.4).
+    # Structural exclusion must keep BOTH question prompts (LOS-dedup dropped the 2nd)
+    # while still excluding the 3 answer keys.
+    body = r"""
+\begin{tcolorbox}[checkpointbox, title=Module 7 Checkpoint]
+\begin{enumerate}
+  \item[M-7.1] A first distinct question about precision and recall on imbalanced data.
+  \item[M-7.4] Why is the harmonic mean used for F1 instead of the arithmetic mean here?
+  \item[M-7.4] A spam filter with high precision but low recall: what does that mean exactly?
+\end{enumerate}
+\textbf{Answers:}
+\begin{enumerate}
+  \item[M-7.1] Because accuracy hides the minority class entirely.
+  \item[M-7.4] The harmonic mean punishes imbalance between P and R.
+  \item[M-7.4] It catches little spam but rarely misflags legitimate ham.
+\end{enumerate}
+\end{tcolorbox}
+"""
+    total, ids, _ = _flagged(_make_guide(tmp_path, body))
+    assert total == 3          # both M-7.4 prompts kept; the 3 answer keys excluded
+    assert ids == []
 
 
 def test_trailing_los_echo_is_stripped(tmp_path):
@@ -146,6 +172,52 @@ def test_combined_reasons_when_both_signals_fire(tmp_path):
         parts = set(reasons[los].split(","))
         assert "known-tail" in parts
         assert "shared-suffix(x3)" in parts
+
+
+def test_los_only_in_answer_enumerate_is_kept(tmp_path):
+    # Real case (ai_agents_and_apps): plain-text questions, then Answers:, then
+    # \item[LOS] items appended INSIDE the answer enumerate. Those LOS items have no
+    # question-region duplicate, so they are genuine prompts and must be KEPT -- a
+    # blunt "exclude everything after Answers" rule wrongly dropped them to zero.
+    body = r"""
+\begin{tcolorbox}[checkpointbox, title=Module 2 Checkpoint]
+\begin{enumerate}
+  \item What are the three elements of a well-structured prompt? Give an example.
+  \item Explain zero-shot vs few-shot prompting and when each is appropriate here.
+\end{enumerate}
+\textbf{Answers:}
+\begin{enumerate}
+  \item Instruction, context, and format specification, with a worked example.
+  \item Zero-shot uses no examples; few-shot supplies two to eight exemplars.
+  \item[AAA-2.6] Design a FewShotPromptTemplate and name the three components you must supply.
+  \item[AAA-2.8] Debug prompt-engineering failures by isolating one variable at a time.
+\end{enumerate}
+\end{tcolorbox}
+"""
+    total, ids, _ = _flagged(_make_guide(tmp_path, body))
+    assert total == 2          # AAA-2.6 + AAA-2.8 kept (no question-region duplicate)
+    assert ids == []
+
+
+def test_nested_tcolorbox_does_not_break_answer_key_exclusion(tmp_path):
+    # A nested \begin{tcolorbox}..\end{tcolorbox} before the Answers marker must not
+    # truncate the checkpoint box (a non-greedy box regex would stop at the nested
+    # \end{tcolorbox}, letting the answer-key X-1.1 be counted as a 2nd prompt).
+    body = r"""
+\begin{tcolorbox}[checkpointbox]
+\begin{enumerate}
+  \item[X-1.1] A genuine prompt about the chapter's core idea explained in your words.
+\end{enumerate}
+\begin{tcolorbox}[debugbox]a nested aside\end{tcolorbox}
+\textbf{Answers:}
+\begin{enumerate}
+  \item[X-1.1] The core idea is X because Y, shown by the worked example here.
+\end{enumerate}
+\end{tcolorbox}
+"""
+    total, ids, _ = _flagged(_make_guide(tmp_path, body))
+    assert total == 1          # the answer-key X-1.1 excluded despite the nested box
+    assert ids == []
 
 
 def test_line_numbers_reported(tmp_path):
