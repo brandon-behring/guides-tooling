@@ -15,19 +15,25 @@ count without authoring chapter-specific content::
 Because the padded items are now ``>10`` words they pass G1 silently, but the tail
 is generic -- the same closing recurs verbatim across many checkpoints (and across
 guides), so the prompt no longer cues recall of *this* chapter. G1's stub counter
-measures the FRONT (prompt body); it cannot see that the words were padding. (The
+measures word *count* on the front; it cannot see the words were padding. (The
 generic checkpoint card BACK -- "Answer from memory..." -- is templated *by design*
-in ``extract_cards.py`` and is NOT a defect; this audit only inspects the front.)
+in ``extract_cards.py`` and is NOT a defect; this audit only inspects the prompt.)
 
 Two complementary signals; a hit on EITHER flags the item:
 
-  (B) **Known-tail blocklist** -- exact trailing match against
-      :data:`CHECKPOINT_TEMPLATE_TAILS`. Catches cross-guide singletons that a
-      per-guide cluster threshold misses; zero false positives (exact strings).
+  (B) **Known cross-guide suffix** -- the item's trailing ``SUFFIX_WORDS`` normalized
+      words match a tail in :data:`CHECKPOINT_TEMPLATE_SUFFIXES`, a data-derived set
+      of suffixes that recur across ``>=2`` DIFFERENT guides. Cross-guide recurrence
+      is boilerplate regardless of topic, and catches the singletons (a tail used
+      only 1-2x in a given guide) that signal A misses.
   (A) **Intra-guide shared-suffix cluster** -- ``>=MIN_CLUSTER`` checkpoint items in
-      the SAME guide whose trailing ``SUFFIX_WORDS`` normalized words are identical.
-      Self-maintaining: catches future/unknown templates the moment a padding pass
-      reuses any tail >=3x in a guide.
+      the SAME guide share the trailing ``SUFFIX_WORDS`` normalized words. Catches
+      guide-local templates (incl. topic-specific ones absent from the cross-guide
+      set), and is self-maintaining as new padding appears.
+
+Counts are over UNIQUE checkpoint prompts: a checkpoint box may repeat ``\item[LOS]``
+in a paired ``\textbf{Answers:}`` enumerate, so items are de-duplicated by LOS-ID
+(keeping the first = the prompt) before counting/flagging.
 
 Usage::
 
@@ -57,43 +63,55 @@ from tooling.audits.guide._guide_scope import (
     guide_dirs,
 )
 
-# Detection thresholds. SUFFIX_WORDS must be <= the shortest known tail (13 words)
-# so two items that share a known tail also share their last SUFFIX_WORDS words;
-# and it sits above every benign shared checkpoint phrase observed fleet-wide
-# (all < 10 words, e.g. "give one example of each"). Three hand-authored prompts
+# Detection thresholds. SUFFIX_WORDS is the trailing-word window used by BOTH
+# signals; 10 sits above every benign shared checkpoint phrase observed fleet-wide
+# (all < 10 words, e.g. "give one example of each") -- three hand-authored prompts
 # sharing 10 verbatim trailing words essentially never happens. MIN_CLUSTER mirrors
-# the observed template repetition (real tails recur 3-10x within a single guide);
-# singletons (1-2x) are left to the known-tail blocklist.
+# the observed template repetition (real tails recur 3-10x within a single guide).
 SUFFIX_WORDS = 10
 MIN_CLUSTER = 3
 
-# Curated from the 2026-06 fleet sweep (fleet occurrence counts in comments),
-# normalized exactly as _norm_words() emits: lowercased, hyphens + punctuation
-# reduced to spaces, whitespace collapsed, single-character tokens dropped.
-CHECKPOINT_TEMPLATE_TAILS: frozenset[str] = frozenset({
-    "show the first step the signal that it worked and one thing that can go wrong",                                   # 89
-    "name one metric that separates them one scenario that flips the trade off and the mechanism behind the flip",     # 61
-    "give one operational example and name one signal that confirms the description applies in practice",              # 50
-    "state the diagnostic that separates it from nearby lookalikes and one false positive",                            # 35
-    "name the variable that drives the outcome the boundary where conclusions flip and why that boundary matters",     # 23
-    "state the metric the threshold that matters in practice and one confounder you must control for",                 # 14
-    "name the primary constraint one secondary constraint you consciously relax and why that relaxation is acceptable",# 12
+# Data-derived 2026-06-26 (fleet count / #guides in comments): 10-word trailing
+# suffixes that recur across >=2 DIFFERENT guides. Cross-guide recurrence across
+# unrelated topics is boilerplate; this is what catches a tail used only 1-2x in a
+# given guide (so it escapes signal A's >=3 intra-guide cluster). Regenerate with
+# the fleet suffix-frequency analysis if the corpus changes. Normalized exactly as
+# _norm_words() emits (lowercased, hyphens + punctuation -> space, 1-char tokens
+# dropped, trailing LOS-echo stripped).
+CHECKPOINT_TEMPLATE_SUFFIXES: frozenset[str] = frozenset({
+    "that it worked and one thing that can go wrong",                        # 92 / 18 guides
+    "flips the trade off and the mechanism behind the flip",                 # 63 / 17 guides
+    "name one signal that confirms the description applies in practice",     # 52 / 14 guides
+    "that separates it from nearby lookalikes and one false positive",       # 36 / 10 guides
+    "and the failure mode you hit at the domain boundary",                   # 32 / 10 guides
+    "state what goes wrong if you ignore the underlying mechanism",          # 23 / 12 guides
+    "the boundary where conclusions flip and why that boundary matters",     # 23 /  6 guides
+    "matters in practice and one confounder you must control for",           # 14 /  3 guides
+    "constraint you consciously relax and why that relaxation is acceptable",# 12 /  2 guides
 })
 
+# A trailing right-aligned LOS echo "\hfill\textit{(DLJ-6.6)}" some guides append to
+# every checkpoint. Stripped BEFORE normalization so its parenthesized LOS (whose
+# letters survive as a stray token, e.g. "dlj") cannot shift the suffix window or
+# defeat a cross-guide suffix match.
+_LOS_ECHO_RE = re.compile(r"\\hfill\s*\\textit\s*\{\s*\([^)]*\)\s*\}\s*$")
 # \texttt[opt]{...} etc. -- a macro NAME plus an optional [..] arg; the {..} arg
 # content is preserved (only the braces are dropped) so prose inside \textbf{...}
-# still counts toward the suffix, matching G1's count_stub_checkpoint_items.
+# still counts toward the suffix.
 _MACRO_RE = re.compile(r"\\[a-zA-Z]+\*?(\[[^\]]*\])?")
 
 
 def _norm_words(body: str) -> list[str]:
     """Normalize a checkpoint body to lowercase word tokens.
 
-    Strips macro names + optional args, drops braces, lowercases, then reduces
-    every non-alphanumeric character (INCLUDING hyphens) to a space so the tail
-    match is punctuation/hyphenation-insensitive ("trade-off" == "trade off").
-    Single-character tokens are dropped (mirrors the G1 stub counter).
+    Strips a trailing LOS-echo, then macro names + optional args, drops braces,
+    lowercases, and reduces every non-alphanumeric character (INCLUDING hyphens) to
+    a space so suffix matching is punctuation/hyphenation-insensitive ("trade-off"
+    == "trade off"). Single-character tokens are dropped. This shares G1's macro/brace
+    handling but ALSO normalizes punctuation/hyphens -- a deliberate, detector-specific
+    divergence for stable suffix comparison, not a mirror of the G1 word counter.
     """
+    body = _LOS_ECHO_RE.sub("", body)
     s = _MACRO_RE.sub(" ", body)
     s = s.replace("{", " ").replace("}", " ")
     s = re.sub(r"[^a-z0-9\s]", " ", s.lower())
@@ -105,55 +123,68 @@ class Templated:
     file: str
     line: int
     los_id: str
-    reason: str   # "known-tail" | "shared-suffix(xN)"
+    reason: str   # comma-joined: "known-tail" and/or "shared-suffix(xN)"
     snippet: str
 
 
 def find_template_tails(guide_dir) -> tuple[int, list[Templated]]:
-    """Return ``(total_checkpoint_items, templated_items)`` for one guide."""
-    # (file, line, los_id, normalized words)
+    """Return ``(unique_checkpoint_prompts, templated_items)`` for one guide."""
+    # (file, line, los_id, normalized words), de-duplicated by LOS-ID so a paired
+    # "Answers:" enumerate that repeats \item[LOS] is not counted as a 2nd prompt.
     items: list[tuple[str, int, str, list[str]]] = []
+    seen: set[str] = set()
     for tex in chapter_files(guide_dir):
         try:
             content = tex.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
         for m in CHECKPOINT_ITEM_RE.finditer(content):
+            los_id = m.group(1)
+            if los_id in seen:        # keep the first occurrence (the prompt)
+                continue
+            seen.add(los_id)
             words = _norm_words(m.group(2))
             line = content[: m.start()].count("\n") + 1
-            items.append((tex.name, line, m.group(1), words))
+            items.append((tex.name, line, los_id, words))
 
-    flagged: dict[int, str] = {}
+    # Trailing SUFFIX_WORDS-word key per item (None if the prompt is shorter).
+    suffixes = [
+        " ".join(words[-SUFFIX_WORDS:]) if len(words) >= SUFFIX_WORDS else None
+        for (_f, _l, _id, words) in items
+    ]
+
+    reasons: dict[int, set[str]] = defaultdict(set)
 
     # Signal A: >= MIN_CLUSTER items in THIS guide sharing the trailing suffix.
-    suffix_groups: dict[str, list[int]] = defaultdict(list)
-    for i, (_f, _l, _id, words) in enumerate(items):
-        if len(words) >= SUFFIX_WORDS:
-            suffix_groups[" ".join(words[-SUFFIX_WORDS:])].append(i)
-    for idxs in suffix_groups.values():
+    groups: dict[str, list[int]] = defaultdict(list)
+    for i, suf in enumerate(suffixes):
+        if suf is not None:
+            groups[suf].append(i)
+    for idxs in groups.values():
         if len(idxs) >= MIN_CLUSTER:
             for i in idxs:
-                flagged[i] = f"shared-suffix(x{len(idxs)})"
+                reasons[i].add(f"shared-suffix(x{len(idxs)})")
 
-    # Signal B: known boilerplate tail (catches singletons that signal A misses).
-    for i, (_f, _l, _id, words) in enumerate(items):
-        joined = " ".join(words)
-        if any(joined.endswith(tail) for tail in CHECKPOINT_TEMPLATE_TAILS):
-            flagged.setdefault(i, "known-tail")
+    # Signal B: known cross-guide suffix (catches singletons signal A misses).
+    for i, suf in enumerate(suffixes):
+        if suf is not None and suf in CHECKPOINT_TEMPLATE_SUFFIXES:
+            reasons[i].add("known-tail")
 
     templated = [
-        Templated(items[i][0], items[i][1], items[i][2], reason,
-                  " ".join(items[i][3])[:80])
-        for i, reason in sorted(flagged.items())
+        Templated(items[i][0], items[i][1], items[i][2],
+                  ",".join(sorted(reasons[i])), " ".join(items[i][3])[:80])
+        for i in sorted(reasons)
     ]
     return len(items), templated
 
 
 def _reason_tally(templated: list[Templated]) -> str:
-    """e.g. '9 shared-suffix, 5 known-tail' -- collapse the (xN) detail."""
+    """e.g. '14 shared-suffix, 5 known-tail' -- per-signal item counts (an item may
+    hit both signals, so the parts can sum to more than len(templated))."""
     counts: dict[str, int] = defaultdict(int)
     for t in templated:
-        counts[t.reason.split("(", 1)[0]] += 1
+        for part in t.reason.split(","):
+            counts[part.split("(", 1)[0]] += 1
     return ", ".join(f"{n} {kind}" for kind, n in sorted(
         counts.items(), key=lambda kv: kv[1], reverse=True))
 
@@ -179,9 +210,9 @@ def fleet_table() -> str:
     for name, total, n, pct, reasons in rows:
         out.append(f"| `{name}` | {total} | {n} | {pct:.0f}% | {reasons} |")
     out.append("")
+    pct_fleet = (fleet_templated / fleet_total * 100) if fleet_total else 0.0
     out.append(f"**{len(rows)} guides affected** — {fleet_templated} templated "
-               f"checkpoint(s) of {fleet_total} fleet-wide "
-               f"({fleet_templated / fleet_total * 100:.1f}%).")
+               f"checkpoint(s) of {fleet_total} fleet-wide ({pct_fleet:.1f}%).")
     return "\n".join(out)
 
 
@@ -205,8 +236,10 @@ def main() -> None:
 
     guide_dir = guide_dir_for_slug(args.guide)
     if guide_dir is None or not guide_dir.is_dir():
-        # Message matches audit_gold.NOT_FOUND_RE so G2 treats a bad slug as
-        # out-of-scope, not as a gate failure.
+        # Message matches audit_gold.NOT_FOUND_RE. NB: in audit_gold's G2 dispatch a
+        # NOT_FOUND match records an out-of-scope note (it does not contribute a
+        # template-tailing FAIL). In a real fleet run every discovered slug resolves,
+        # so this branch is unreachable there.
         print(f"Error: guide not found for slug: {args.guide}", file=sys.stderr)
         sys.exit(2)
 
