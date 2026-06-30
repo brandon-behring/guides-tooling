@@ -737,8 +737,10 @@ def clean_latex(text: str) -> str:
     # Remove comments (unescaped % to end of line)
     text = re.sub(r'%.*$', '', text, flags=re.MULTILINE)
 
-    # Restore escaped percent signs
-    text = text.replace('\x00PERCENT\x00', '%')
+    # NB: \% stays protected as the \x00PERCENT\x00 sentinel THROUGH math-region
+    # protection below; it is restored context-aware near the end of this function
+    # (bare ``%`` in prose, ``\%`` inside math) so a percentage written inside
+    # ``$...$`` is not flattened into a MathJax line comment.
 
     # === LaTeX-literal escape protection ==================================
     # Protect source escapes that would otherwise be destroyed downstream:
@@ -763,6 +765,13 @@ def clean_latex(text: str) -> str:
     text = text.replace(r'\_', '\x00USCORE\x00')
     text = text.replace(r'\{', '\x00LBRACE\x00')
     text = text.replace(r'\}', '\x00RBRACE\x00')
+    # Protect escaped currency \$ BEFORE math-region protection (below) so it
+    # cannot participate in $...$ / $$...$$ delimiter matching. The book idiom
+    # ``\$$48$K`` (literal \$, then $48$ math, then K) otherwise forms a stray
+    # ``$$`` digraph that mis-pairs the display/inline passes and leaks a
+    # ``__MATH_REGION__`` placeholder. Restored context-aware near the end (bare
+    # ``$`` in prose, ``\$`` inside math).
+    text = text.replace(r'\$', '\x00DOLLAR\x00')
 
     # Sub-goal labels: \substep{label}{content} → **Step N: label**\ncontent
     # Must happen before general brace stripping
@@ -868,10 +877,8 @@ def clean_latex(text: str) -> str:
     text = re.sub(r'\\[ ,;\t\n]', ' ', text)
     text = re.sub(r'\\!', '', text)
 
-    # Convert LaTeX escaped dollar sign to placeholder (for currency)
-    # Must be done BEFORE math processing removes dollar signs
-    # Use Unicode placeholder that won't appear in math: ¤ (currency sign)
-    text = re.sub(r'\\\$', '¤DOLLAR¤', text)
+    # (escaped currency ``\$`` was already protected as the \x00DOLLAR\x00
+    # sentinel above, BEFORE math-region protection — see the escape block.)
 
     # Math commands - convert before handling dollar signs
     # Text in math mode: \text{...} → just the text
@@ -1002,8 +1009,8 @@ def clean_latex(text: str) -> str:
     # Remove remaining dollar signs from math mode
     text = re.sub(r'\$', '', text)
 
-    # Restore currency dollar signs from placeholder
-    text = text.replace('¤DOLLAR¤', '$')
+    # (currency \x00DOLLAR\x00 is restored context-aware near the end, together
+    # with the \x00PERCENT\x00 sentinel.)
 
     def _texttt_replace(match: "re.Match[str]") -> str:
         """Preserve \\texttt{} content as inline code when it contains characters
@@ -1238,10 +1245,20 @@ def clean_latex(text: str) -> str:
     for i, region in enumerate(_code_regions):
         text = text.replace(f'__CODE_BLOCK_{i}__', region)
 
+    # === RESTORE ESCAPED %/$ : bare in prose, escaped (``\%`` / ``\$``) in math ===
+    # The \x00PERCENT\x00 / \x00DOLLAR\x00 sentinels protected ``\%`` / ``\$`` through
+    # the whole pipeline (including math-region capture). HTML prose wants a literal
+    # ``%`` / ``$``; MathJax wants ``\%`` / ``\$`` (a bare ``%`` is a comment, a bare
+    # ``$`` a delimiter). The main text still hides math behind __MATH_REGION__
+    # placeholders, so this de-escapes ONLY prose; each math region is de-escaped to
+    # the backslash form when it is restored just below.
+    text = text.replace('\x00PERCENT\x00', '%').replace('\x00DOLLAR\x00', '$')
+
     # === RESTORE PROTECTED MATH REGIONS ===
     # Math stays as ``$...$`` / ``$$...$$`` / ``\[...\]`` in the YAML so
     # yaml_to_apkg.py can apply its MathJax delimiter conversion at export.
     for i, region in enumerate(_math_regions):
+        region = region.replace('\x00PERCENT\x00', r'\%').replace('\x00DOLLAR\x00', r'\$')
         text = text.replace(f'__MATH_REGION_{i}__', region)
 
     # === RESTORE LATEX-LITERAL ESCAPE SENTINELS ===
@@ -1266,14 +1283,23 @@ def extract_terms(content: str, source_file: str, volume: str, chapter: str, see
     - \\term[LOS]{name}{definition}      - with LOS reference for traceability
     """
     cards = []
-    # Pattern: \term[optional-LOS]{name}{definition}
-    # Handle nested braces in definition (e.g., equations)
-    pattern = r'\\term(?:\[([^\]]*)\])?\{([^}]+)\}\{((?:[^{}]|\{[^{}]*\})*)\}'
+    # Match \term[optional-LOS]{name}{ up to the definition's opening brace, then
+    # BALANCE-match the definition body. The old single-regex form allowed only ONE
+    # level of brace nesting in the definition, so a term whose definition held
+    # 2-deep math braces (e.g. ``\varepsilon_{\mathrm{uncond}}``) failed to match
+    # and was SILENTLY dropped (no warning, no ID collision). _extract_balanced_braces
+    # handles arbitrary depth.
+    header = re.compile(r'\\term(?:\[([^\]]*)\])?\{([^}]+)\}\{')
 
-    for match in re.finditer(pattern, content, re.DOTALL):
+    for match in header.finditer(content):
         los_id = match.group(1)  # Optional LOS bracket (None if not present)
         name = match.group(2).strip()
-        definition = match.group(3).strip()
+        def_open = match.end() - 1  # index of the '{' opening the definition body
+        span = _extract_balanced_braces(content, def_open)
+        if span is None:
+            print(f"⚠️  \\term '{name}' has unbalanced definition braces — skipped")
+            continue
+        definition = content[span[0]:span[1]].strip()
         definition = clean_latex(definition)
 
         card_id = generate_card_id(
@@ -1445,7 +1471,7 @@ def extract_problems(content: str, source_file: str, volume: str, chapter: str, 
             'type': 'problem',
             'id': card_id,
             'front': truncate_at_sentence(problem_clean, 800),   # Increased from 600
-            'back': truncate_at_sentence(solution_clean, 2000),  # Increased from 1000 to preserve Answer/Key Insight at end
+            'back': truncate_at_sentence(solution_clean, 8000),  # high cap: keep multi-step worked solutions intact (a 2000 cut dropped mid-solution values + triggered a duplicate, truncated Answer block)
             'los_id': los_id if los_id else None,
             'source': source_file,
             'tags': tags,
@@ -1498,7 +1524,7 @@ def extract_problems(content: str, source_file: str, volume: str, chapter: str, 
             'type': 'problem',
             'id': card_id,
             'front': f"**{title}**\n\n{truncate_at_sentence(problem_clean, 750)}",
-            'back': truncate_at_sentence(solution_clean, 2000),  # Match problem card limit
+            'back': truncate_at_sentence(solution_clean, 8000),  # Match problem card limit (high cap; see above)
             'los_id': None,  # problembox doesn't have LOS ID
             'source': source_file,
             'tags': tags
@@ -1561,7 +1587,13 @@ def extract_vignettes(content: str, source_file: str, volume: str, chapter: str,
 
         solution = ""
         if solution_match:
-            solution = clean_latex(solution_match.group(1).strip())
+            # Only attach a solution that is THIS vignette's own: reject it if any
+            # other problem/vignette environment opens between \end{vignette} and
+            # the candidate solution. Without this guard a solution-less vignette
+            # wrongly adopts the NEXT problem's worked answer as its rubric.
+            gap = search_window[:solution_match.start()]
+            if not re.search(r'\\begin\{(?:problem|problembox|vignette)\}', gap):
+                solution = clean_latex(solution_match.group(1).strip())
 
         # Split at first question marker for better card structure
         scenario_raw, questions_raw = split_at_questions(body)
@@ -1577,7 +1609,10 @@ def extract_vignettes(content: str, source_file: str, volume: str, chapter: str,
             # No clear question split, use full body as back
             body_cleaned = clean_latex(body)
             front_text = f"Case Study: {title}"
-            back_text = truncate_at_sentence(body_cleaned, 2000)  # Match problem card limit
+            # High cap: vignettes pose their questions as a bare enumerate (no
+            # \textbf{Question} marker), so the whole body lands here. A 2000-char
+            # cut dropped the final question; keep the full list intact.
+            back_text = truncate_at_sentence(body_cleaned, 8000)
 
         # Append solution as Answer Rubric if found
         if solution:
@@ -1657,6 +1692,11 @@ def extract_interview_contexts(content: str, source_file: str, volume: str, chap
         los_ids = [x.strip() for x in los_id.split(',') if x.strip()] if los_id else []
         primary_los_id = los_ids[0] if los_ids else None
         body = match.group(3).strip()
+        # Capture THIS context's own \companytags (each interviewcontext carries its
+        # own role line), then strip the macro so the role string neither leaks into
+        # the card back nor receives the file-global over-tagging applied later.
+        own_company_tags = extract_company_tags(body)
+        body = re.sub(r'\\companytags\{[^}]*\}', '', body)
         body_clean = clean_latex(body)
 
         # Determine title: use bracket title, or extract from body, or generic fallback
@@ -1733,19 +1773,22 @@ def extract_interview_contexts(content: str, source_file: str, volume: str, chap
             seen_ids=seen_ids
         )
 
-        # Build tags
+        # Build tags (scope company tags to THIS context, not the file-global set)
         tags = ['type:interview', 'type:strategy']
         for single_los in los_ids:
             tags.append(f'los:{single_los.replace(" ", "_")}')
+        for ct in own_company_tags:
+            tags.append(f'company:{ct}')
 
         card = {
             'type': 'interview',
             'id': card_id,
             'front': front,
-            'back': truncate_at_sentence(body_clean, 600),
+            'back': truncate_at_sentence(body_clean, 3000),  # keep BOTH the 30s and 2min answers (the 600 cap dropped the 2min answer entirely)
             'los_id': primary_los_id,
             'source': source_file,
-            'tags': tags
+            'tags': tags,
+            'company_tags': list(own_company_tags),  # per-card, scoped to this context
         }
         if len(los_ids) > 1:
             card['los_ids'] = los_ids
@@ -3480,8 +3523,12 @@ def process_file(filepath: Path, seen_ids: set) -> dict[str, Any]:
 
     # Add company tags, actuarial notes, scaffolding level, and check quality
     for card in cards:
-        card['company_tags'] = company_tags
-        card['tags'].extend([f'company:{tag}' for tag in company_tags])
+        # Apply the file-global company tags only to cards that did not already
+        # scope their own (interview cards each carry their own role line). Use a
+        # per-card list copy so PyYAML does not emit a shared &id001/*id001 anchor.
+        if not card.get('company_tags'):
+            card['company_tags'] = list(company_tags)
+            card['tags'].extend([f'company:{tag}' for tag in company_tags])
         check_generic_front(card)  # Warn on generic fronts
 
         # Default scaffolding_level from card type (honors pre-existing overrides)
