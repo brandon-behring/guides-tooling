@@ -42,7 +42,16 @@ def main() -> int:
             print(f"  would build  {g.name}")
             built += 1
             continue
-        r = subprocess.run(["make", "-C", str(gdir), "decks"], capture_output=True, text=True)
+        try:
+            r = subprocess.run(
+                ["make", "-C", str(gdir), "decks"],
+                capture_output=True, text=True,
+                timeout=900,  # a deck build is minutes; a hang must not stall the fleet loop
+            )
+        except subprocess.TimeoutExpired:
+            print(f"  FAIL  {g.name}: timeout after 900s")
+            failed.append(g.name)
+            continue
         if r.returncode == 0:
             print(f"  OK    {g.name}")
             built += 1

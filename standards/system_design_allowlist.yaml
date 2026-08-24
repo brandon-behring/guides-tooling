@@ -62,7 +62,6 @@ required:
   - manning_generative_ai_in_action
   - manning_prompt_engineering_ai_systems
   - manning_building_llm_applications_with_dspy
-  - manning_ai_engineering_in_practice
   - manning_eval_alignment_seminal_papers
   - manning_ai_model_evaluation
 

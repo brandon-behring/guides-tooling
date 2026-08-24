@@ -43,6 +43,7 @@ EXCLUDE_DIRS = {
 }
 
 # Silver audit helpers
+from tooling._fail_loud import warn_audit_error
 from tooling.audits.fleet.audit_source_manifest import audit_guide as audit_silver_guide
 from tooling.audits.fleet.audit_silver import audit_guide as audit_silver_honest_guide
 
@@ -178,8 +179,9 @@ def check_bloom_levels(course: Path) -> tuple[str, str]:
         with open(qa_file) as f:
             config = yaml.safe_load(f)
         levels = set(config.get("los", {}).get("valid_levels", []))
-    except Exception:
-        return "YELLOW", "parse error"
+    except Exception as exc:  # noqa: BLE001 — a malformed guide_qa.yaml is a real
+        # defect, not a shrug: fail the check loudly
+        return "RED", f"guide_qa.yaml parse error: {type(exc).__name__}"
     count = len(levels)
     if count <= 12:
         return "GREEN", f"{count} levels"

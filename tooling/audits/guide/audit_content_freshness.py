@@ -30,6 +30,7 @@ import yaml
 
 # ── Guide discovery ──────────────────────────────────────────────────────────
 
+from tooling._fail_loud import warn_audit_error
 from tooling.audits.guide._guide_scope import (  # noqa: E402
     GuideInfo,
     get_repo_root,
@@ -215,7 +216,9 @@ def get_velocity(guide) -> str:
             try:
                 data = yaml.safe_load(qa.read_text(encoding="utf-8")) or {}
                 vel = (data.get("gold") or {}).get("velocity")
-            except Exception:
+            except Exception as exc:  # noqa: BLE001 — fall back to the shelf
+                # default, but visibly
+                warn_audit_error("audit_content_freshness.velocity", qa, exc)
                 vel = None
         shelf = gd.parent.name
         shelf_default = "fast" if shelf in _FAST_SHELVES else "slow" if shelf in _SLOW_SHELVES else "medium"
@@ -229,30 +232,31 @@ def scan_file(tex_path: Path, guide_slug: str) -> list[Finding]:
     findings: list[Finding] = []
     try:
         content = tex_path.read_text(encoding="utf-8")
-        lines = content.split("\n")
+    except Exception as exc:  # noqa: BLE001 — an unread file must not read as "fresh"
+        warn_audit_error("audit_content_freshness.scan_file", tex_path, exc)
+        return findings
+    lines = content.split("\n")
 
-        for rule in RULES:
-            for line_num, line_text in enumerate(lines, start=1):
-                stripped = line_text.lstrip()
-                if stripped.startswith("%"):
-                    continue
-                # Skip warning margin notes that intentionally name deprecated models
-                if r"\warningmargin{" in line_text:
-                    continue
-                # Skip lines annotated as accepted deprecations
-                if "% freshness-ok" in line_text:
-                    continue
-                if rule.compiled.search(line_text):
-                    findings.append(Finding(
-                        file_path=str(tex_path),
-                        line_number=line_num,
-                        line_text=line_text.strip()[:120],
-                        category=rule.category,
-                        severity=rule.severity,
-                        description=rule.description,
-                    ))
-    except Exception:
-        pass
+    for rule in RULES:
+        for line_num, line_text in enumerate(lines, start=1):
+            stripped = line_text.lstrip()
+            if stripped.startswith("%"):
+                continue
+            # Skip warning margin notes that intentionally name deprecated models
+            if r"\warningmargin{" in line_text:
+                continue
+            # Skip lines annotated as accepted deprecations
+            if "% freshness-ok" in line_text:
+                continue
+            if rule.compiled.search(line_text):
+                findings.append(Finding(
+                    file_path=str(tex_path),
+                    line_number=line_num,
+                    line_text=line_text.strip()[:120],
+                    category=rule.category,
+                    severity=rule.severity,
+                    description=rule.description,
+                ))
 
     return findings
 
