@@ -1,0 +1,24 @@
+name: ci
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      # Non-editable install: the packaging regression gate. The explicit
+      # [tool.setuptools] packages list once silently dropped tooling.generate;
+      # importing from OUTSIDE the source tree fails if a package is missing.
+      - name: Install (non-editable)
+        run: pip install .
+      - name: Packaging import smoke (from outside the source tree)
+        run: |
+          cd /tmp
+          python -c "import tooling, tooling.generate.dashboards, tooling.anki.yaml_to_apkg, tooling.anki.build_all, tooling.qa.guide_health, tooling.qa.guide_readiness, tooling.cards.extract_cards, tooling.validation.check_refs, tooling.audits.fleet.audit_all_courses, tooling.audits.fleet.audit_gold, tooling.audits.fleet.check_meap_freshness"
+      - name: Test suite
+        run: |
+          pip install -e . pytest
+          python -m pytest
