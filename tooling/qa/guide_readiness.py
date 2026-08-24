@@ -24,10 +24,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-# Import config loader
+# Import config loader (dual path: script vs package execution)
 try:
+    from _check_exec import UnvettedCommandError, run_vetted
     from guide_qa_config import GuideConfig, ReadinessCheck, load_config
 except ImportError:
+    from ._check_exec import UnvettedCommandError, run_vetted
     from .guide_qa_config import GuideConfig, ReadinessCheck, load_config
 
 # lualatex recovers from many real errors and still emits a PDF, so a build check
@@ -95,16 +97,16 @@ class ReadinessReport:
 def run_readiness_check(check: ReadinessCheck, config: GuideConfig) -> CheckResult:
     """Run a single readiness check command.
 
-    A check passes if the command exits with code 0.
+    A check passes if the command exits with code 0. Commands run through the
+    shell after ``_check_exec`` vetting (fleet commands need globs, ``;``
+    sequencing, and env prefixes); an unvetted command fails its check without
+    executing.
     """
     try:
-        result = subprocess.run(
+        result = run_vetted(
             check.cmd,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=120,  # Build checks can be slow
             cwd=str(config.config_path.parent),
+            timeout=120,  # Build checks can be slow
         )
 
         passed = result.returncode == 0
@@ -133,6 +135,14 @@ def run_readiness_check(check: ReadinessCheck, config: GuideConfig) -> CheckResu
             output=output,
         )
 
+    except UnvettedCommandError as e:
+        return CheckResult(
+            name=check.name,
+            passed=False,
+            blocking=check.blocking,
+            output="",
+            error=f"Refused unvetted check command: {e}",
+        )
     except subprocess.TimeoutExpired:
         return CheckResult(
             name=check.name,
