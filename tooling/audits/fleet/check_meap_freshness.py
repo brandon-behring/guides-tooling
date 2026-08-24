@@ -271,7 +271,11 @@ def parse_state(html: str) -> dict:
     is_meap = bool(meap_began)
     sig_src = "|".join((meap_began, last_updated_month, pub, isbn, str(pages)))
     signature = hashlib.sha256(sig_src.encode("utf-8")).hexdigest()[:16]
+    # Canary against the bug class this signature replaced: a page where NONE
+    # of the fields parse means the markup changed — never a healthy baseline.
+    parse_degraded = not (meap_began or last_updated_month or pub or isbn or pages)
     return {
+        "parse_degraded": parse_degraded,
         "planned_chapters": planned,
         "latest_release_note": note,
         "latest_released_chapter": latest_ch,
@@ -323,11 +327,11 @@ def version_overlay(row: dict, manifest: dict | None, vinfo: dict | None) -> dic
         drift = f"v{rec_ver} -> v{live_ver} (upstream updated {live_date})"
     elif build_date and live_date and str(live_date) > str(build_date):
         drift = f"upstream v{live_ver} updated {live_date} > guide captured {build_date}"
-    if drift and row["status"] != "RENAMED":
+    if drift and row["status"] not in ("RENAMED", "UNRESOLVED", "PUBLISHED"):
         row["status"], row["drift"] = "STALE", drift
-    elif drift and row["status"] == "RENAMED":
-        # Keep RENAMED leading (the slug fix-up comes first) but surface the
-        # version drift so the row is not mistaken for rename-only.
+    elif drift and row["status"] in ("RENAMED", "UNRESOLVED", "PUBLISHED"):
+        # Keep the action-bearing status leading (fix the slug / flip the
+        # registry first) but surface the version drift too. Review MF-2.
         row["drift"] += f"; also stale: {drift}"
     elif live_ver is not None and row["status"] in ("BASELINE", "OK"):
         row["drift"] = f"upstream at v{live_ver} (updated {live_date}); {row['drift']}"
@@ -349,18 +353,43 @@ def classify(internal: str, recorded_slug: str, final_url: str, live: dict,
     # param on the redirect (e.g. ?a_aid=...) yields a persistent false RENAMED.
     final_slug = final_url.split("?")[0].split("#")[0].rstrip("/").split("/")[-1]
     renamed = final_slug != recorded_slug
+    # A prior state written by the pre-#20 checker carries the blind signature
+    # (schema meap_freshness/1): treat it as a migration baseline, never as
+    # evidence of change (else the first post-fix run reports a fleet-wide
+    # false STALE). Codex review R-1, 2026-08-24.
+    prior_schema = (prior or {}).get("schema", "")
+    if prior is not None and prior_schema != STATE_SCHEMA:
+        prior = None
     prior_sig = (prior or {}).get("signature")
     latest = live["latest_released_chapter"]
     live_month = month_to_iso(live.get("last_updated_month"))
-    build_month = str(build_date)[:7] if build_date else None
+    bm = re.match(r"(\d{4})-(\d{1,2})", str(build_date)) if build_date else None
+    build_month = f"{bm.group(1)}-{int(bm.group(2)):02d}" if bm else None
 
     if renamed:
         status = "RENAMED"
         drift = f"Manning renamed slug: '{recorded_slug}' -> '{final_slug}'"
+    elif live.get("is_meap") is False:
+        # The terminal update: the book left MEAP. Published pages carry no
+        # month fields, so the sticky rule can never fire — make the
+        # transition itself sticky instead (review MF-3; the fleet had 8
+        # such guides silently reading OK until re-statused by hand).
+        status = "PUBLISHED"
+        drift = ("book left MEAP (published edition live) — final re-capture + "
+                 "guides.yml status flip owed")
     elif live_month and build_month and live_month > build_month:
         status = "STALE"
         drift = (f"upstream 'Last updated {live['last_updated_month']}' postdates the "
                  f"guide's capture ({build_date}) — re-capture owed")
+    elif (build_month is None and (prior or {}).get("status") == "STALE"
+          and (prior or {}).get("last_updated_month") == live.get("last_updated_month")):
+        # No manifest capture date to anchor on (e.g. a minimal-bootstrap
+        # manifest): once a month-bump marked the row STALE, keep the debt
+        # until a re-capture writes a real extracted/captured date — do not
+        # let the recorded signature launder it into OK. Codex review R-2.
+        status = "STALE"
+        drift = (f"unrefreshed since 'Last updated {live.get('last_updated_month')}' "
+                 "(no capture date in the manifest to clear the debt)")
     elif prior_sig is None:
         if captured is not None and latest and latest > captured:
             status = "STALE?"
@@ -386,9 +415,12 @@ def classify(internal: str, recorded_slug: str, final_url: str, live: dict,
     }
 
 
+STATE_SCHEMA = "meap_freshness/2"  # /1 = the blind-signature era; /2 = month-field signature (#20)
+
+
 def write_state(full_slug: str, row: dict, recorded_slug: str) -> None:
     state = {
-        "schema": "meap_freshness/1",
+        "schema": STATE_SCHEMA,
         "internal_slug": row["internal"],
         "recorded_slug": recorded_slug,
         "live_slug": row["live_slug"],
@@ -401,6 +433,7 @@ def write_state(full_slug: str, row: dict, recorded_slug: str) -> None:
         "live_version": row.get("live_version"),
         "live_last_updated": row.get("live_last_updated"),
         "last_updated_month": row.get("last_updated_month"),
+        "is_meap": row.get("is_meap"),
         "latest_release_note": row["latest_release_note"],
         "drift": row["drift"],
     }
@@ -421,7 +454,7 @@ def bootstrap_cache_manifest(full_slug: str, slug: str, live: dict) -> None:
         "product_url": PRODUCT_URL.format(slug=slug),
         "livebook_url": f"https://livebook.manning.com/book/{slug}",
         "meap_version": "unknown",
-        "planned_chapters": live["planned_chapters"],
+        **({"planned_chapters": live["planned_chapters"]} if live.get("planned_chapters", 0) > 1 else {}),
         "note": "Per-chapter sha256 backfilled on first --refresh (authenticated extract).",
     }, sort_keys=False, allow_unicode=True))
 
@@ -451,12 +484,16 @@ def run_check(only: str | None, snapshot: dict | None, versions: dict | None, wr
                 if not snap:
                     raise KeyError("not in snapshot")
                 final_url, live = snap["final_url"], snap["state"]
-                _need = {"signature", "latest_released_chapter", "planned_chapters", "latest_release_note"}
+                _need = {"signature", "latest_released_chapter", "planned_chapters",
+                         "latest_release_note", "last_updated_month"}
                 if not isinstance(live, dict) or not _need.issubset(live):
                     raise ValueError(f"snapshot 'state' missing {_need - set(live or {})}")
             else:
                 final_url, html = fetch_product(recorded_slug)
                 live = parse_state(html)
+                if live.get("parse_degraded"):
+                    raise ValueError("parse degraded — no month/ISBN fields on the "
+                                     "product page (markup changed?)")
                 time.sleep(0.3)  # politeness
         except Exception as exc:  # noqa: BLE001 -- classify, never crash the sweep
             code = getattr(exc, "code", None)
@@ -489,7 +526,8 @@ def run_check(only: str | None, snapshot: dict | None, versions: dict | None, wr
 
 
 def render_report(rows: list[dict]) -> str:
-    order = {"RENAMED": 0, "STALE": 1, "STALE?": 2, "UNRESOLVED": 3, "ERROR": 4, "BASELINE": 5, "OK": 6}
+    order = {"RENAMED": 0, "PUBLISHED": 1, "STALE": 2, "STALE?": 3, "UNRESOLVED": 4,
+             "ERROR": 5, "BASELINE": 6, "OK": 7}
     rows = sorted(rows, key=lambda r: (order.get(r["status"], 9), r["internal"]))
     counts: dict[str, int] = {}
     for r in rows:
@@ -503,6 +541,7 @@ def render_report(rows: list[dict]) -> str:
         "| Status | Count | Meaning |",
         "|--------|------:|---------|",
         f"| RENAMED | {counts.get('RENAMED',0)} | Manning changed the book's slug — guide dir/manifest needs rename |",
+        f"| PUBLISHED | {counts.get('PUBLISHED',0)} | Book left MEAP — final re-capture + guides.yml status flip owed |",
         f"| STALE | {counts.get('STALE',0)} | Upstream advanced — version/date ahead of the guide, or product page changed |",
         f"| STALE? | {counts.get('STALE?',0)} | First-run estimate: book's latest chapter > what the guide covers |",
         f"| BASELINE | {counts.get('BASELINE',0)} | Baseline recorded this run; drift detection active next run |",
