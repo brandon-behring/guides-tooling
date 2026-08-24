@@ -82,6 +82,8 @@ INJECTION_PROBES = [
     ("make -C guide pilot; perl payload.pl", "allowlist"),
     ("grep x f <input", "forbidden shell character"),
     ("PYTHONPATH=x", "no executable"),
+    ("PATH=./bin grep -c x f", "env assignment"),
+    ("LD_PRELOAD=./x.so grep -c x f", "env assignment"),
 ]
 
 

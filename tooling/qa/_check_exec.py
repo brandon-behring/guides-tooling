@@ -8,10 +8,13 @@ cannot express them). This module bounds what that shell invocation can do.
 
 Threat model: ``guide_qa.yaml`` is repo-controlled, the same trust level as a
 Makefile — a reviewer can see a ``python3 -c "…"`` payload plainly, and such
-payloads stay arbitrary code by design. What vetting removes is *shell-syntax*
-injection smuggled into an otherwise innocuous-looking command on an untrusted
-branch: command substitution, backticks, background ``&``, redirects to files,
-here-docs, and pipeline heads outside a small executable allowlist.
+payloads stay arbitrary code by design (the same residual holds for ``awk``
+programs, which can ``system()``, and ``make`` targets). What vetting removes
+is *shell-syntax* injection smuggled into an otherwise innocuous-looking
+command on an untrusted branch: command substitution, backticks, background
+``&``, redirects to files, here-docs, pipeline heads outside a small
+executable allowlist, and env prefixes like ``PATH=`` that would subvert
+that allowlist with a repo-planted binary.
 
 Rules enforced by :func:`vet_check_cmd`:
 
@@ -20,8 +23,9 @@ Rules enforced by :func:`vet_check_cmd`:
 - outside quotes, ``& < ( ) ~ #`` and newlines are refused; ``>`` is allowed
   only as the exact redirect ``2>/dev/null`` / ``>/dev/null``;
 - the command splits on unquoted ``|`` / ``;`` into segments; after optional
-  ``NAME=value`` assignments, each segment's head executable must be in
-  :data:`ALLOWED_EXECUTABLES`.
+  assignments (only :data:`ALLOWED_ASSIGNMENTS` names — ``PATH=`` or
+  ``LD_PRELOAD=`` would redirect the head lookup itself), each segment's
+  head executable must be in :data:`ALLOWED_EXECUTABLES`.
 """
 
 from __future__ import annotations
@@ -36,6 +40,11 @@ ALLOWED_EXECUTABLES = frozenset(
 )
 
 _ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+#: Env names a command may set as a prefix. Deliberately tiny: the fleet uses
+#: only PYTHONPATH, and names like PATH / LD_PRELOAD / PYTHONSTARTUP would let
+#: a repo-planted file subvert the executable allowlist below.
+ALLOWED_ASSIGNMENTS = frozenset({"PYTHONPATH"})
 # The lookahead pins the target: `2>/dev/nullX` must not pass as a prefix match.
 _REDIRECT_RE = re.compile(r"2?>/dev/null(?=[\s|;]|$)")
 
@@ -159,8 +168,12 @@ def _vet_segment_head(segment: str) -> str | None:
     except ValueError as exc:
         return f"unparseable segment: {exc}"
     for tok in tokens:
-        if _ASSIGNMENT_RE.match(tok):
-            continue  # NAME=value prefix; its value already passed the char scan
+        m = _ASSIGNMENT_RE.match(tok)
+        if m:
+            name = tok.split("=", 1)[0]
+            if name not in ALLOWED_ASSIGNMENTS:
+                return f"env assignment {name!r} not allowed (could subvert the allowlist)"
+            continue  # allowed prefix; its value already passed the char scan
         if tok in ALLOWED_EXECUTABLES:
             return None
         return f"executable {tok!r} not in the check-command allowlist"
