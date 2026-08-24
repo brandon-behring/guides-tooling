@@ -22,14 +22,15 @@ Design (runs anywhere, including headless/cron):
     (``--dry-run``) but does not execute the capture (the extractor lives in the
     legacy ``course_learning`` repo; see ``meap_freshness.md``).
 
-Staleness semantics (carried over from the source -- worth knowing): the auth-free
-signature is **change-since-last-check** detection -- a guide flagged STALE/STALE?
-records the new live signature, so the *next* run reads OK unless the page changes
-again. It pings on movement; it does not track capture debt indefinitely. The
-**authoritative sticky signal** is the ``--versions`` overlay (an authenticated
-dashboard scan: live ``vN``/date vs the manifest's), which re-compares every run
-until an actual re-capture bumps ``meap_version``/``extracted``. (Making STALE
-sticky on the auth-free path is a possible future enhancement, not a port change.)
+Staleness semantics (revised 2026-08-24; guides-tooling#20): the auth-free
+signature hashes the product page's month fields (``MEAP began`` / ``Last
+updated`` / ``Publication in`` / ISBN / pages) -- the old TOC scrape hashed an
+empty string on every page. STALE is now STICKY vs the guide's own capture:
+whenever the live ``Last updated`` month postdates the manifest's
+``extracted``/``captured`` month, the row stays STALE until a re-capture bumps
+the manifest. The ``--versions`` overlay (an authenticated dashboard/liveBook
+scan: live ``vN``/date) remains the precise signal and also elevates RENAMED
+and UNRESOLVED rows.
 
 Source-of-truth split (never clobber hand-authored files):
   * review/cache_manifest.yml  -- hand/extractor-authored MEAP provenance (READ
@@ -71,6 +72,19 @@ SLUG_OVERRIDES = {
     "vibe_engineering": "vibe-engineering",
     "software_engineering_data_scientists": "software-engineering-for-data-scientists",
     "sutskevers_list": "sutskevers-list",  # the apostrophe slug 404s
+    # Live probes 2026-08-24 (ecosystem review; guides-tooling#21): renames + new slugs.
+    "rlhf_book": "reinforcement-learning-from-human-feedback",
+    "advanced_rag_app": "build-an-advanced-rag-application-from-scratch",
+    "stable_diffusion_book": "local-image-generation",  # renamed twice (…beyond-slop→this)
+    "ai_applications_made_easy": "grokking-ai-applications",
+    "eval_alignment_seminal_papers": "llm-evaluation-and-alignment-the-foundational-ideas",
+    "rag_seminal_papers": "retrieval-augmented-generation-the-foundational-ideas",
+    "context_engineering": "context-engineering",
+    "prompt_engineering_in_practice": "prompt-engineering-in-practice",
+    "quantization_fast_inference": "quantization-and-fast-inference",
+    "applied_rl": "applied-reinforcement-learning",
+    "prompt_engineering_ai_systems": "prompt-engineering-for-ai-systems-cx",  # -cx variant is live
+    "crewai_mcp": "building-agentic-applications-with-crewai-and-mcp-cx",  # -cx variant is live
 }
 
 # Inlined from course_learning/scripts/extract_livebook.LIVEBOOK_SLUGS (50
@@ -210,37 +224,74 @@ def fetch_product(slug: str, timeout: int = 15) -> tuple[str, str]:
         return resp.geturl(), resp.read().decode("utf-8", "replace")
 
 
+_MONTHS = {m: i for i, m in enumerate(
+    ("January", "February", "March", "April", "May", "June", "July",
+     "August", "September", "October", "November", "December"), start=1)}
+
+
+def month_to_iso(month_year: str | None) -> str | None:
+    """'April 2026' -> '2026-04' (None/unknown month -> None)."""
+    if not month_year:
+        return None
+    m = re.match(r"([A-Za-z]+) (\d{4})", month_year.strip())
+    if not m or m.group(1) not in _MONTHS:
+        return None
+    return f"{m.group(2)}-{_MONTHS[m.group(1)]:02d}"
+
+
 def parse_state(html: str) -> dict:
-    """Extract a stable drift signature + maturity hints from a product page."""
+    """Extract a stable drift signature + maturity hints from a product page.
+
+    The signature hashes the page's *month fields* — the only auth-free values
+    that verifiably move when a MEAP updates (probed 2026-08-24; guides-tooling#20):
+    ``MEAP began <Month YYYY>`` (present ONLY on MEAP pages), ``Last updated
+    <Month YYYY>`` (bumps with each MEAP drop), ``Publication in …``, the ISBN
+    and the page count. The old TOC scrape hashed an empty string on every page
+    (the TOC is a JS spinner; ``/ajax/getTocHtml`` returns ``{"tocHtml":""}``),
+    and ``\bMEAP\b`` matched the nav bar on every page.
+    """
     text = re.sub(r"<[^>]+>", " ", html)
     text = _html.unescape(re.sub(r"\s+", " ", text))
-    toc = re.findall(r"\b(\d{1,2})\s+[A-Z][^\d]{3,80}?(?=\s+\d{1,2}\s+[A-Z]|\s*$)", text)
     planned = len(set(re.findall(r"chapter-(\d{1,2})", html)))
     note = ""
     m = re.search(r"(Chapter[s]?\s+\d[^.]{0,180}?in\s+[A-Z][A-Za-z0-9 :,&'\-]{3,60})", text)
     if m:
         note = m.group(1).strip()
     latest_ch = max([int(n) for n in re.findall(r"[Cc]hapter[s]?\s+(\d{1,2})", note)] or [0])
-    is_meap = bool(re.search(r"\bMEAP\b", text))
+    began_m = re.search(r"MEAP began ([A-Z][a-z]+ \d{4})", text)
+    meap_began = began_m.group(1) if began_m else ""
+    lu_m = re.search(r"Last updated ([A-Z][a-z]+ \d{4})", text)
+    last_updated_month = lu_m.group(1) if lu_m else ""
     pub_m = re.search(r"Publication in ([A-Za-z]+ \d{4})", text)
     pub = pub_m.group(1) if pub_m else ""
-    sig_src = "|".join(toc) + "||" + note
+    isbn_m = re.search(r"ISBN\s*(\d{13})", text)
+    isbn = isbn_m.group(1) if isbn_m else ""
+    pages_m = re.search(r"(\d+) pages", text)
+    pages = int(pages_m.group(1)) if pages_m else 0
+    is_meap = bool(meap_began)
+    sig_src = "|".join((meap_began, last_updated_month, pub, isbn, str(pages)))
     signature = hashlib.sha256(sig_src.encode("utf-8")).hexdigest()[:16]
     return {
         "planned_chapters": planned,
         "latest_release_note": note,
         "latest_released_chapter": latest_ch,
         "is_meap": is_meap,
+        "meap_began": meap_began,
+        "last_updated_month": last_updated_month,
         "publication_estimate": pub,
+        "isbn": isbn,
+        "pages": pages,
         "signature": signature,
     }
 
 
 # --------------------------------------------------------------------------- version overlay
 def guide_build_date(manifest: dict | None) -> str | None:
-    """Best-effort ISO date the guide was last built (manifest ``extracted``)."""
-    if manifest and manifest.get("extracted"):
-        return str(manifest["extracted"])
+    """Best-effort ISO date the guide was last built (manifest ``extracted`` or
+    ``captured`` — some extractor-authored manifests use the latter key)."""
+    for key in ("extracted", "captured"):
+        if manifest and manifest.get(key):
+            return str(manifest[key])
     return None
 
 
@@ -274,6 +325,10 @@ def version_overlay(row: dict, manifest: dict | None, vinfo: dict | None) -> dic
         drift = f"upstream v{live_ver} updated {live_date} > guide captured {build_date}"
     if drift and row["status"] != "RENAMED":
         row["status"], row["drift"] = "STALE", drift
+    elif drift and row["status"] == "RENAMED":
+        # Keep RENAMED leading (the slug fix-up comes first) but surface the
+        # version drift so the row is not mistaken for rename-only.
+        row["drift"] += f"; also stale: {drift}"
     elif live_ver is not None and row["status"] in ("BASELINE", "OK"):
         row["drift"] = f"upstream at v{live_ver} (updated {live_date}); {row['drift']}"
     return row
@@ -281,18 +336,31 @@ def version_overlay(row: dict, manifest: dict | None, vinfo: dict | None) -> dic
 
 # --------------------------------------------------------------------------- classification
 def classify(internal: str, recorded_slug: str, final_url: str, live: dict,
-             prior: dict | None, captured: int | None) -> dict:
-    """Return a row dict: status + human drift note."""
+             prior: dict | None, captured: int | None,
+             build_date: str | None = None) -> dict:
+    """Return a row dict: status + human drift note.
+
+    Staleness is STICKY vs the guide's own capture date: if the live page's
+    ``Last updated <Month YYYY>`` postdates the manifest's ``extracted``/
+    ``captured`` month, the row is STALE on every run until a re-capture bumps
+    the manifest — not just on the run where the page changed (fixes the
+    ping-not-track semantics the old docstring admitted)."""
     # Strip any ?query / #fragment before deriving the slug, else a tracking
     # param on the redirect (e.g. ?a_aid=...) yields a persistent false RENAMED.
     final_slug = final_url.split("?")[0].split("#")[0].rstrip("/").split("/")[-1]
     renamed = final_slug != recorded_slug
     prior_sig = (prior or {}).get("signature")
     latest = live["latest_released_chapter"]
+    live_month = month_to_iso(live.get("last_updated_month"))
+    build_month = str(build_date)[:7] if build_date else None
 
     if renamed:
         status = "RENAMED"
         drift = f"Manning renamed slug: '{recorded_slug}' -> '{final_slug}'"
+    elif live_month and build_month and live_month > build_month:
+        status = "STALE"
+        drift = (f"upstream 'Last updated {live['last_updated_month']}' postdates the "
+                 f"guide's capture ({build_date}) — re-capture owed")
     elif prior_sig is None:
         if captured is not None and latest and latest > captured:
             status = "STALE?"
@@ -302,9 +370,9 @@ def classify(internal: str, recorded_slug: str, final_url: str, live: dict,
             drift = "baseline established; drift detection starts next run"
     elif prior_sig != live["signature"]:
         status = "STALE"
-        drift = "product page changed since last check (new/revised chapters)"
-        if live["latest_release_note"]:
-            drift += f": {live['latest_release_note'][:90]}"
+        drift = "product page changed since last check (month fields moved)"
+        if live.get("last_updated_month"):
+            drift += f": Last updated {live['last_updated_month']}"
     else:
         status = "OK"
         drift = "no change since last check"
@@ -313,6 +381,7 @@ def classify(internal: str, recorded_slug: str, final_url: str, live: dict,
         "internal": internal, "live_slug": final_slug, "status": status,
         "captured_chapters": captured, "latest_released_chapter": latest,
         "planned_chapters": live["planned_chapters"], "signature": live["signature"],
+        "is_meap": live.get("is_meap"), "last_updated_month": live.get("last_updated_month"),
         "latest_release_note": live["latest_release_note"], "drift": drift,
     }
 
@@ -331,6 +400,7 @@ def write_state(full_slug: str, row: dict, recorded_slug: str) -> None:
         "planned_chapters": row["planned_chapters"],
         "live_version": row.get("live_version"),
         "live_last_updated": row.get("live_last_updated"),
+        "last_updated_month": row.get("last_updated_month"),
         "latest_release_note": row["latest_release_note"],
         "drift": row["drift"],
     }
@@ -365,10 +435,15 @@ def run_check(only: str | None, snapshot: dict | None, versions: dict | None, wr
         manifest = read_yaml(cache_manifest_path(full_slug))
         recorded_slug = resolve_slug(internal, manifest)
         if not recorded_slug:
-            rows.append({"internal": internal, "full_slug": full_slug, "live_slug": "",
-                         "status": "UNRESOLVED", "captured_chapters": None,
-                         "latest_released_chapter": 0, "planned_chapters": 0, "signature": "",
-                         "latest_release_note": "", "drift": "no livebook slug (add to SLUG_OVERRIDES)"})
+            row = {"internal": internal, "full_slug": full_slug, "live_slug": "",
+                   "status": "UNRESOLVED", "captured_chapters": None,
+                   "latest_released_chapter": 0, "planned_chapters": 0, "signature": "",
+                   "latest_release_note": "", "drift": "no livebook slug (add to SLUG_OVERRIDES)"}
+            if versions:
+                # A supplied versions map can still speak about this guide (keyed by
+                # internal slug) even though the product page cannot be fetched.
+                row = version_overlay(row, manifest, versions.get(internal))
+            rows.append(row)
             continue
         try:
             if snapshot is not None:
@@ -394,7 +469,8 @@ def run_check(only: str | None, snapshot: dict | None, versions: dict | None, wr
             continue
         prior = read_yaml(freshness_state_path(full_slug))
         captured = captured_chapter_count(full_slug, manifest)
-        row = classify(internal, recorded_slug, final_url, live, prior, captured)
+        row = classify(internal, recorded_slug, final_url, live, prior, captured,
+                       build_date=guide_build_date(manifest))
         row["full_slug"] = full_slug
         if versions:
             row = version_overlay(row, manifest, versions.get(recorded_slug) or versions.get(row["live_slug"]))
