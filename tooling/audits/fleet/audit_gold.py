@@ -58,6 +58,17 @@ Known limitations (documented T2 scope -- see the PR thread):
   MEAP-freshness checker, which carries clean version+date data); here G7 only
   checks that a pinned ``vN`` version is named in E.
 
+Machine-local precondition: G3/G6 (and G7's dashboard reads) check BUILT
+artifacts, which are gitignored -- a fresh checkout scores 0 Gold everywhere.
+Rebuild first (~4 min on 16 cores from the host repo root)::
+
+    ls */*/guide/Makefile | xargs -P 16 -I{} make -C "$(dirname {})" pilot
+    make dashboards && make decks-all   # then run this audit
+
+Exit codes: fleet mode AND ``--guide`` mode exit 1 when any audited guide
+classifies FAIL or SCAFFOLD-ONLY (single-guide exit-0-on-FAIL was a defect,
+fixed 2026-08; automation may rely on the exit code). GOLD-ELIGIBLE exits 0.
+
 Usage:
     python -m tooling.audits.fleet.audit_gold                 # all Silver-PASS
     python -m tooling.audits.fleet.audit_gold --guide <slug>  # single guide
@@ -980,8 +991,23 @@ def write_markdown_report(reports: list[HonestReport], meta: dict[str, str]) -> 
     return path
 
 
+
+def exit_code_for(reports) -> int:
+    """1 when any audited guide classifies FAIL or SCAFFOLD-ONLY, else 0.
+
+    Applies in fleet mode AND ``--guide`` mode (single-guide exit-0-on-FAIL
+    was a defect, fixed 2026-08). GOLD-ELIGIBLE is exit 0.
+    """
+    return 1 if any(r.classification in ("FAIL", "SCAFFOLD-ONLY") for r in reports) else 0
+
+
 def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap = argparse.ArgumentParser(
+        description=__doc__.split("\n")[0],
+        epilog="Gold checks built artifacts (gitignored): rebuild PDFs/decks/dashboards "
+               "first or gates G3/G6 read a stale or empty state. Exits 1 on any "
+               "FAIL/SCAFFOLD-ONLY, in --guide mode too.",
+    )
     ap.add_argument("--guide", help="Audit a single guide by slug")
     ap.add_argument("--verbose", action="store_true", help="Per-gate detail for all guides")
     ap.add_argument("--report", action="store_true", help="Write markdown report to reports/")
@@ -1015,10 +1041,9 @@ def main() -> None:
     if args.report:
         print(f"\nReport saved: {write_markdown_report(reports, meta)}")
 
-    if not args.guide and any(
-        r.classification in ("FAIL", "SCAFFOLD-ONLY") for r in reports
-    ):
-        sys.exit(1)
+    code = exit_code_for(reports)
+    if code:
+        sys.exit(code)
 
 
 if __name__ == "__main__":
