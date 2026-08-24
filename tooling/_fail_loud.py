@@ -22,8 +22,19 @@ def warn_audit_error(module: str, path: Path | str, exc: Exception) -> None:
 
     ``module`` names the audit (e.g. ``"audit_crossref_quality"``) so fleet
     logs can be grepped per audit; ``path`` is the file that failed.
+
+    This is a degradation-path reporter, so it must NEVER raise and mask the
+    original failure: a custom exception whose ``__str__`` raises, or a closed
+    stderr, is swallowed here rather than replacing the error it describes.
     """
-    print(
-        f"[audit-error] {module}: {type(exc).__name__} on {path}: {exc}",
-        file=sys.stderr,
-    )
+    try:
+        detail = str(exc)
+    except Exception:  # noqa: BLE001 — a broken __str__ must not eat the real error
+        detail = "<unprintable exception>"
+    try:
+        print(
+            f"[audit-error] {module}: {type(exc).__name__} on {path}: {detail}",
+            file=sys.stderr,
+        )
+    except Exception:  # noqa: BLE001 — broken/closed stderr must not abort the scan
+        pass

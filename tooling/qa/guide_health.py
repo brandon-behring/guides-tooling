@@ -303,14 +303,32 @@ def _load_cards(cards_path: Path) -> list[dict] | None:
     try:
         with open(cards_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
-        if isinstance(data, dict) and "cards" in data:
-            return data["cards"] or []
-        if isinstance(data, list):
-            return data
-        return []
     except Exception as exc:  # noqa: BLE001 — surfaced as a RED card-health row
         warn_audit_error("guide_health.cards", cards_path, exc)
         return None
+
+    if isinstance(data, dict) and "cards" in data:
+        cards = data["cards"] or []
+    elif isinstance(data, list):
+        cards = data
+    elif data is None:
+        cards = []
+    else:
+        # Valid YAML, wrong shape (e.g. `cards: wrong` -> a bare string). Iterating
+        # it downstream would crash on .get; treat it as malformed, not empty.
+        warn_audit_error(
+            "guide_health.cards", cards_path,
+            TypeError(f"top-level YAML is {type(data).__name__}, expected list or {{cards: [...]}}"),
+        )
+        return None
+
+    if not isinstance(cards, list) or not all(isinstance(c, dict) for c in cards):
+        warn_audit_error(
+            "guide_health.cards", cards_path,
+            TypeError("'cards' is not a list of mappings"),
+        )
+        return None
+    return cards
 
 
 def _count_presentation_issues(cards: list[dict]) -> int:
@@ -463,7 +481,7 @@ def main() -> int:
                 "target": 0,
                 "status": card_result.status,
                 "trend": "new",
-                "error": None,
+                "error": card_result.error,
                 "card_traceability_pct": card_result.traceability_pct,
                 "card_presentation_clean_pct": card_result.presentation_clean_pct,
                 "card_id_collisions": card_result.id_collisions,

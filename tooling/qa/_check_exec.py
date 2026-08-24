@@ -112,7 +112,12 @@ def vet_check_cmd(cmd: str) -> str | None:
     if "`" in cmd:
         return "backtick"
 
-    segments: list[list[int]] = [[]]  # unquoted char indices per segment
+    # Split into segments at UNQUOTED, UNESCAPED | / ; only. Each segment is a
+    # (start, end) span of the ORIGINAL string, so shlex below re-does the exact
+    # backslash/quote processing /bin/sh will do — it must never see a different
+    # head token than the shell runs (the `\cmake`-vetted-as-`make` bypass).
+    spans: list[tuple[int, int]] = []
+    seg_start = 0
     try:
         for ctx, ch, i in _spans(cmd):
             if ctx == "single":
@@ -124,21 +129,22 @@ def vet_check_cmd(cmd: str) -> str | None:
             if ch in _FORBIDDEN_UNQUOTED:
                 return f"forbidden shell character {ch!r}"
             if ch == ">":
-                # Only the literal 2>/dev/null or >/dev/null redirect.
+                # Only the literal 2>/dev/null or >/dev/null redirect. The chars
+                # stay in the segment span; shlex tokenizes 2>/dev/null harmlessly.
                 start = i - 1 if i > 0 and cmd[i - 1] == "2" else i
                 if not _REDIRECT_RE.match(cmd, start):
                     return "redirect other than [2]>/dev/null"
                 continue
             if ch in "|;":
-                segments.append([])
-                continue
-            segments[-1].append(i)
+                spans.append((seg_start, i))
+                seg_start = i + 1
     except UnvettedCommandError as exc:
         return str(exc)
+    spans.append((seg_start, len(cmd)))
 
     seen_head = False
-    for seg_indices in segments:
-        segment = _segment_text(cmd, seg_indices)
+    for start, end in spans:
+        segment = cmd[start:end]
         if not segment.strip():
             continue  # the empty span inside "||"
         reason = _vet_segment_head(segment)
@@ -148,17 +154,6 @@ def vet_check_cmd(cmd: str) -> str | None:
     if not seen_head:
         return "no command found"
     return None
-
-
-def _segment_text(cmd: str, indices: list[int]) -> str:
-    """Rebuild a segment from the original string, spanning min..max index.
-
-    Using the original span (not just unquoted chars) keeps quoted arguments
-    intact for shlex tokenization below.
-    """
-    if not indices:
-        return ""
-    return cmd[indices[0] : indices[-1] + 1]
 
 
 def _vet_segment_head(segment: str) -> str | None:

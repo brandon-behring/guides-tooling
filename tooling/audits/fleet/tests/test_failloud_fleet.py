@@ -9,11 +9,13 @@ from tooling.audits.fleet import audit_all_courses, audit_silver
 
 # ── audit_all_courses.check_bloom_levels ─────────────────────────────────────
 
-def test_bloom_levels_malformed_yaml_is_red(tmp_path):
+def test_bloom_levels_malformed_yaml_is_red(tmp_path, capsys):
     (tmp_path / "guide_qa.yaml").write_text("los: [unclosed\n")
     status, detail = audit_all_courses.check_bloom_levels(tmp_path)
     assert status == "RED"
     assert "parse error" in detail
+    # Codex finding #10: RED row AND the greppable stderr record.
+    assert "[audit-error] audit_all_courses" in capsys.readouterr().err
 
 
 def test_bloom_levels_wrong_shape_is_red(tmp_path):

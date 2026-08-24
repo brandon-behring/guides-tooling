@@ -180,7 +180,8 @@ def check_bloom_levels(course: Path) -> tuple[str, str]:
             config = yaml.safe_load(f)
         levels = set(config.get("los", {}).get("valid_levels", []))
     except Exception as exc:  # noqa: BLE001 — a malformed guide_qa.yaml is a real
-        # defect, not a shrug: fail the check loudly
+        # defect, not a shrug: fail the check loudly (RED row AND stderr record)
+        warn_audit_error("audit_all_courses.check_bloom_levels", qa_file, exc)
         return "RED", f"guide_qa.yaml parse error: {type(exc).__name__}"
     count = len(levels)
     if count <= 12:

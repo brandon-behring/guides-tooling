@@ -104,6 +104,30 @@ def test_escaped_semicolon_is_literal_not_separator():
     assert vet_check_cmd(r"echo a\;b") is None
 
 
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        r"\cmake --version",              # backslash-hidden head (the C1 bypass)
+        r"\cmake -E touch /tmp/vet-proof",
+        r"\p\e\r\l -e 1",
+        r"\t\o\u\c\h /tmp/x",
+    ],
+)
+def test_backslash_hidden_head_is_vetted_as_the_shell_runs_it(cmd):
+    # Regression for C1: shlex must see the SAME head /bin/sh resolves, so a
+    # non-allowlisted executable disguised with backslashes is refused.
+    reason = vet_check_cmd(cmd)
+    assert reason is not None, f"backslash bypass accepted: {cmd!r}"
+    assert "allowlist" in reason
+
+
+def test_backslash_escaped_allowlisted_head_still_accepted():
+    # `\g\r\e\p` is `grep` to the shell AND to shlex — must vet clean, not be
+    # rejected for the wrong reason.
+    assert vet_check_cmd(r"\g\r\e\p -c x f") is None
+    assert vet_check_cmd(r"gr\ep -c x f") is None
+
+
 def test_quoted_metachars_are_allowed():
     # `$`, `;`, parens inside SINGLE quotes are literal for the shell.
     assert vet_check_cmd("awk -F: '{s+=$2}END{print s}' f") is None
