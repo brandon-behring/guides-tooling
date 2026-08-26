@@ -9,7 +9,7 @@ chapters scores clean. Measured 2026-08-26, that is not hypothetical::
 
     manning_graph_algorithms_data_science   60/60  = 100% duplicated  (FAIL)
     manning_gnn_in_action                   40/40  = 100%             (FAIL)
-    manning_algorithms_data_structures      55/61  =  90%             (GOLD)
+    manning_algorithms_data_structures      55/56  =  98%             (GOLD)
     manning_grokking_bayes                  35/42  =  83%             (GOLD)
 
 Two of the four are **live Gold**. ``manning_algorithms_data_structures`` pastes a
