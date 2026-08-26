@@ -26,6 +26,8 @@ from typing import Any
 import yaml
 
 from tooling import layout
+from tooling._fail_loud import warn_audit_error
+from tooling.qa._check_exec import UnvettedCommandError, run_vetted
 from tooling.qa.guide_qa_config import GuideConfig, MetricDef, load_config
 
 
@@ -81,39 +83,40 @@ def compute_trend(current: int | None, previous: int | None) -> str:
 def run_metric_check(check_cmd: str, config: GuideConfig) -> tuple[int | None, str | None]:
     """Run a metric check command and parse the last line as an integer.
 
-    Commands run from the config file's parent directory.
+    Commands run from the config file's parent directory, through the shell
+    after ``_check_exec`` vetting (the fleet's commands need pipes, ``||``
+    fallbacks, and ``2>/dev/null``). Exit status is deliberately not enforced:
+    ``grep -c`` exits 1 on a zero count, and 0 is a legitimate metric value.
 
     Returns:
         (value, error) — value is None if command failed.
     """
     try:
-        result = subprocess.run(
+        result = run_vetted(
             check_cmd,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=30,
             cwd=str(config.config_path.parent),
+            timeout=30,
         )
-        output = result.stdout.strip()
-
-        if not output:
-            # Some commands put output on stderr
-            output = result.stderr.strip()
-
-        if not output:
-            return None, f"No output from: {check_cmd}"
-
-        # Take the last line, try to parse as int
-        last_line = output.strip().split("\n")[-1].strip()
-        return int(last_line), None
-
+    except UnvettedCommandError as e:
+        return None, f"Refused unvetted check command: {e}"
     except subprocess.TimeoutExpired:
         return None, f"Timeout (30s): {check_cmd}"
+    except Exception as e:  # noqa: BLE001 — surfaced as an error row in the dashboard
+        return None, f"Error running '{check_cmd}': {e}"
+
+    output = result.stdout.strip()
+    if not output:
+        # Some commands put output on stderr
+        output = result.stderr.strip()
+    if not output:
+        return None, f"No output from: {check_cmd}"
+
+    # Take the last line, try to parse as int
+    last_line = output.strip().split("\n")[-1].strip()
+    try:
+        return int(last_line), None
     except ValueError:
         return None, f"Non-numeric output '{last_line}' from: {check_cmd}"
-    except Exception as e:
-        return None, f"Error running '{check_cmd}': {e}"
 
 
 # ── History management ──────────────────────────────────────────────────────
@@ -286,22 +289,46 @@ class CardHealthResult:
     presentation_clean_pct: float
     id_collisions: int
     status: str  # GREEN, YELLOW, RED
+    error: str | None = None
 
 
-def _load_cards(cards_path: Path) -> list[dict]:
-    """Load cards from all_cards.yml."""
+def _load_cards(cards_path: Path) -> list[dict] | None:
+    """Load cards from all_cards.yml.
+
+    Returns None on an unreadable/malformed file — distinct from [] (no
+    cards), so a parse error cannot masquerade as an empty deck.
+    """
     if not cards_path.exists():
         return []
     try:
         with open(cards_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
-        if isinstance(data, dict) and "cards" in data:
-            return data["cards"] or []
-        if isinstance(data, list):
-            return data
-        return []
-    except Exception:
-        return []
+    except Exception as exc:  # noqa: BLE001 — surfaced as a RED card-health row
+        warn_audit_error("guide_health.cards", cards_path, exc)
+        return None
+
+    if isinstance(data, dict) and "cards" in data:
+        cards = data["cards"] or []
+    elif isinstance(data, list):
+        cards = data
+    elif data is None:
+        cards = []
+    else:
+        # Valid YAML, wrong shape (e.g. `cards: wrong` -> a bare string). Iterating
+        # it downstream would crash on .get; treat it as malformed, not empty.
+        warn_audit_error(
+            "guide_health.cards", cards_path,
+            TypeError(f"top-level YAML is {type(data).__name__}, expected list or {{cards: [...]}}"),
+        )
+        return None
+
+    if not isinstance(cards, list) or not all(isinstance(c, dict) for c in cards):
+        warn_audit_error(
+            "guide_health.cards", cards_path,
+            TypeError("'cards' is not a list of mappings"),
+        )
+        return None
+    return cards
 
 
 def _count_presentation_issues(cards: list[dict]) -> int:
@@ -343,6 +370,18 @@ def evaluate_card_health(config: GuideConfig) -> CardHealthResult | None:
         return None
 
     cards = _load_cards(cards_path)
+    if cards is None:
+        return CardHealthResult(
+            guide=config.name,
+            total_cards=0,
+            cards_with_los=0,
+            traceability_pct=0.0,
+            presentation_issues=0,
+            presentation_clean_pct=0.0,
+            id_collisions=0,
+            status="RED",
+            error=f"unreadable or malformed {cards_path.name}",
+        )
     if not cards:
         return None
 
@@ -392,6 +431,8 @@ def card_health_markdown(result: CardHealthResult) -> str:
         f"| [{icon}] | ID collisions | {result.id_collisions} |",
         "",
     ]
+    if result.error:
+        lines[-1:] = [f"| [{icon}] | Error | {result.error} |", ""]
     return "\n".join(lines)
 
 
@@ -440,7 +481,7 @@ def main() -> int:
                 "target": 0,
                 "status": card_result.status,
                 "trend": "new",
-                "error": None,
+                "error": card_result.error,
                 "card_traceability_pct": card_result.traceability_pct,
                 "card_presentation_clean_pct": card_result.presentation_clean_pct,
                 "card_id_collisions": card_result.id_collisions,
@@ -463,8 +504,11 @@ def main() -> int:
     if not args.dry_run and not args.no_save:
         save_metrics_history(config, results)
 
-    # Exit code: 1 if any RED
+    # Exit code: 1 if any RED metric, or a card-file parse error (quality-driven
+    # RED card health alone does not fail the run — parse errors do)
     if any(r.status == "RED" for r in results):
+        return 1
+    if card_result is not None and card_result.error:
         return 1
     return 0
 

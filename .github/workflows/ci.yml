@@ -1,0 +1,57 @@
+name: ci
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Test the advertised floor (pyproject requires-python) and a current runtime.
+        python-version: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      # Non-editable install: the packaging regression gate. The explicit
+      # [tool.setuptools] packages list once silently dropped tooling.generate;
+      # importing from OUTSIDE the source tree fails if a package is missing.
+      - name: Install (non-editable)
+        run: pip install .
+      - name: Packaging import smoke (from outside the source tree)
+        run: |
+          cd /tmp
+          python - <<'PY'
+          import importlib
+          # Every package in pyproject [tool.setuptools].packages, imported from
+          # outside the source tree. A package dropped from pyproject won't be in
+          # the non-editable install -> ImportError here. Keep this list == pyproject.
+          PACKAGES = [
+              "tooling",
+              "tooling.validation",
+              "tooling.cards",
+              "tooling.anki",
+              "tooling.qa",
+              "tooling.audits",
+              "tooling.audits.fleet",
+              "tooling.audits.guide",
+              "tooling.generate",
+          ]
+          for name in PACKAGES:
+              mod = importlib.import_module(name)
+              f = getattr(mod, "__file__", None)
+              # PEP 420 namespace packages (a dropped __init__) have __file__ is None;
+              # every declared package must resolve to a real __init__.py so that
+              # dropping an intermediate package cannot be masked by its children.
+              assert f and f.endswith("__init__.py"), f"{name}: not a real package ({f})"
+          # A few leaf modules the host CI and Makefile actually import at runtime.
+          for name in ["tooling.generate.dashboards", "tooling.anki.yaml_to_apkg",
+                       "tooling.qa.guide_health", "tooling.audits.fleet.audit_gold",
+                       "tooling.audits.fleet.check_meap_freshness"]:
+              importlib.import_module(name)
+          print(f"OK: {len(PACKAGES)} declared packages import as real packages")
+          PY
+      - name: Test suite
+        run: |
+          pip install -e . pytest
+          python -m pytest

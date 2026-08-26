@@ -30,6 +30,7 @@ from typing import Any, Optional
 
 import yaml
 
+from tooling._fail_loud import warn_audit_error
 from tooling.audits.guide._guide_scope import get_repo_root, guide_dir_for_slug
 
 
@@ -197,8 +198,9 @@ def resolve_includes(content: str, base_dir: Path) -> str:
                     included = resolve_includes(included, base_dir)
                     expanded += f"\n% === Included from {inc_path} ===\n"
                     expanded += included
-                except Exception:
-                    pass
+                except Exception as exc:  # noqa: BLE001 — the include's content is
+                    # silently absent from metrics otherwise
+                    warn_audit_error("audit_content_quality.includes", candidate, exc)
                 break
 
     return expanded

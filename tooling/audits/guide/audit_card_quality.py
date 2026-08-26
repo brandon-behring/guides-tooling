@@ -35,6 +35,7 @@ import yaml
 
 # ── Guide discovery ──────────────────────────────────────────────────────────
 
+from tooling._fail_loud import warn_audit_error
 from tooling.audits.guide._guide_scope import (  # noqa: E402
     GuideInfo,
     get_repo_root,
@@ -180,7 +181,8 @@ def audit_guide_cards(guide: GuideInfo, repo_root: Path) -> Optional[GuideCardMe
         try:
             with open(cards_file, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 — skip the file, but say so
+            warn_audit_error("audit_card_quality", cards_file, exc)
             continue
 
         cards = data.get("cards", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
@@ -246,7 +248,9 @@ def find_id_collisions(all_metrics: list[GuideCardMetrics], repo_root: Path) -> 
                     cid = card.get("id", "")
                     if cid:
                         id_to_guides[cid].append(gm.slug)
-            except Exception:
+            except Exception as exc:  # noqa: BLE001 — a skipped file under-reports
+                # ID collisions; make the gap visible
+                warn_audit_error("audit_card_quality.collisions", cards_file, exc)
                 continue
 
     return [(cid, guides) for cid, guides in id_to_guides.items() if len(guides) > 1]

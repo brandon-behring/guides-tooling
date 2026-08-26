@@ -28,6 +28,7 @@ from typing import Optional
 
 import yaml
 
+from tooling._fail_loud import warn_audit_error
 from tooling.audits.guide._guide_scope import (
     chapter_files,
     get_repo_root,
@@ -144,7 +145,8 @@ def extract_terms_from_file(
     """Extract all \\term{}{} definitions from a single .tex file."""
     try:
         content = tex_path.read_text(encoding="utf-8")
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 — an unread file must not read as "0 terms"
+        warn_audit_error("audit_term_consistency", tex_path, exc)
         return []
 
     file_rel = str(tex_path.relative_to(guide_dir.parent))

@@ -6,7 +6,9 @@ build-backend = "setuptools.build_meta"
 name = "guides-tooling"
 version = "0.1.1"
 description = "Shared QA / build / card tooling for the course-guide family. Mounted as a git submodule at <host>/tooling/; host repo root resolves mount-relative."
-requires-python = ">=3.9"
+# 3.10 floor: PEP-604 unions (`int | None`) are evaluated at runtime in
+# guide_health/guide_readiness/guide_qa_config/yaml_to_apkg (no `__future__` import).
+requires-python = ">=3.10"
 dependencies = [
     "pyyaml",
     "genanki",
@@ -24,4 +26,13 @@ packages = [
     "tooling.audits",
     "tooling.audits.fleet",
     "tooling.audits.guide",
+    "tooling.generate",
 ]
+# Runtime assets (latex/ standards/ templates/ config/) live at the REPO ROOT,
+# outside the package, and are resolved off the submodule mount by
+# tooling/paths.py — mount-only by design. A wheel/target install carries code
+# but not assets; consumers mount the submodule (or install editable from it).
+
+[tool.pytest.ini_options]
+testpaths = ["tooling"]
+addopts = "-q -p no:cacheprovider"

@@ -29,6 +29,7 @@ from typing import Any
 
 import yaml
 
+from tooling._fail_loud import warn_audit_error
 from tooling.audits.guide._guide_scope import (
     cards_dir,
     get_repo_root,
@@ -182,7 +183,8 @@ def load_cards(cards_path: Path) -> list[dict[str, Any]]:
         if isinstance(data, list):
             return data
         return []
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 — malformed cards must not read as "0 cards"
+        warn_audit_error("audit_atomicity.load_cards", cards_path, exc)
         return []
 
 

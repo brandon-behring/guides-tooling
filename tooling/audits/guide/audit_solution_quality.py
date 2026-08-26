@@ -33,6 +33,7 @@ import yaml
 
 # ── Guide discovery ──────────────────────────────────────────────────────────
 
+from tooling._fail_loud import warn_audit_error
 from tooling.audits.guide._guide_scope import (  # noqa: E402
     GuideInfo,
     get_repo_root,
@@ -217,7 +218,8 @@ def audit_guide_solutions(guide: GuideInfo, repo_root: Path) -> GuideSolutionMet
             with open(cards_file, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
             cards = data.get("cards", []) if isinstance(data, dict) else []
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 — skip the file, but say so
+            warn_audit_error("audit_solution_quality", cards_file, exc)
             continue
 
         for card in cards:

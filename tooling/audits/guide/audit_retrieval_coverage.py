@@ -31,6 +31,7 @@ import yaml
 
 # ── Guide discovery ──────────────────────────────────────────────────────────
 
+from tooling._fail_loud import warn_audit_error
 from tooling.audits.guide._guide_scope import (  # noqa: E402
     GuideInfo,
     get_repo_root,
@@ -166,7 +167,8 @@ def extract_tested_los_from_cards(cards_dir: Path) -> set[str]:
                         lid = lid.strip()
                         if lid:
                             tested.add(lid)
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 — skip the file, but say so
+            warn_audit_error("audit_retrieval_coverage.cards", cards_file, exc)
             continue
 
     return tested
@@ -194,7 +196,9 @@ def audit_guide_retrieval(guide: GuideInfo, repo_root: Path) -> Optional[GuideRe
             continue
         try:
             content = tex_file.read_text(encoding="utf-8")
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 — an unread chapter must be visible:
+            # its LOS silently vanish from the denominator otherwise
+            warn_audit_error("audit_retrieval_coverage", tex_file, exc)
             continue
 
         # LOS defined

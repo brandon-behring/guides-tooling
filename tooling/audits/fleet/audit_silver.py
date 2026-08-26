@@ -262,17 +262,33 @@ SYSTEM_DESIGN_ALLOWLIST_PATH = paths.system_design_allowlist()
 
 
 def load_system_design_allowlist() -> set[str]:
-    if not SYSTEM_DESIGN_ALLOWLIST_PATH.exists():
+    """Load the allowlist, warning loudly on every degradation path.
+
+    A missing or malformed allowlist exempts EVERY guide from the
+    system-design gate, so each fallback announces itself on stderr instead
+    of silently returning an empty set.
+    """
+    path = SYSTEM_DESIGN_ALLOWLIST_PATH
+
+    def _degraded(why: str) -> set[str]:
+        print(
+            f"[audit-error] audit_silver: system_design_allowlist {why} ({path})"
+            " — no guide will require system-design coverage",
+            file=sys.stderr,
+        )
         return set()
+
+    if not path.exists():
+        return _degraded("missing")
     try:
-        data = yaml.safe_load(SYSTEM_DESIGN_ALLOWLIST_PATH.read_text(errors="replace"))
-    except yaml.YAMLError:
-        return set()
+        data = yaml.safe_load(path.read_text(errors="replace"))
+    except yaml.YAMLError as exc:
+        return _degraded(f"unparseable: {type(exc).__name__}")
     if not isinstance(data, dict):
-        return set()
+        return _degraded("not a mapping")
     required = data.get("required")
     if not isinstance(required, list):
-        return set()
+        return _degraded("'required' key missing or not a list")
     return {s for s in required if isinstance(s, str)}
 
 

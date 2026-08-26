@@ -29,6 +29,7 @@ from typing import Any
 
 # ── Guide discovery ──────────────────────────────────────────────────────────
 
+from tooling._fail_loud import warn_audit_error
 from tooling.audits.guide._guide_scope import (  # noqa: E402
     GuideInfo,
     get_repo_root,
@@ -163,8 +164,8 @@ def collect_labels(chapters_dir: Path) -> set[str]:
             # Detect macro-generated labels: \lessonheader{L1} -> \label{ch:L1}
             for m in MACRO_LABEL_RE.finditer(content):
                 labels.add(f"ch:{m.group(1)}")
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 — one bad file must not abort the scan
+            warn_audit_error("audit_crossref_quality.collect_labels", tex_file, exc)
     # Also check appendices
     appendices = chapters_dir.parent / "appendices"
     if appendices.exists():
@@ -172,8 +173,8 @@ def collect_labels(chapters_dir: Path) -> set[str]:
             try:
                 content = tex_file.read_text(encoding="utf-8")
                 labels.update(LABEL_RE.findall(content))
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001
+                warn_audit_error("audit_crossref_quality.collect_labels", tex_file, exc)
     return labels
 
 
@@ -279,7 +280,8 @@ def audit_guide_crossrefs(
         for tex_file in sorted(tex_dir.glob("*.tex")):
             try:
                 content = tex_file.read_text(encoding="utf-8")
-            except Exception:
+            except Exception as exc:  # noqa: BLE001 — skip the file, but say so
+                warn_audit_error("audit_crossref_quality", tex_file, exc)
                 continue
 
             for text, line_num in _extract_crossrefs_from_content(content):

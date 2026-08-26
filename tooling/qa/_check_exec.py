@@ -1,0 +1,195 @@
+"""Vetted execution for guide_qa.yaml check commands.
+
+`guide_health.run_metric_check` and `guide_readiness.run_readiness_check` run
+command strings taken from a repo's ``guide_qa.yaml`` through the shell (the
+fleet's commands genuinely need pipes, ``||`` fallback chains, ``2>/dev/null``,
+``NAME=value`` prefixes, globs, and ``;`` sequencing — list-form execution
+cannot express them). This module bounds what that shell invocation can do.
+
+Threat model: ``guide_qa.yaml`` is repo-controlled, the same trust level as a
+Makefile — a reviewer can see a ``python3 -c "…"`` payload plainly, and such
+payloads stay arbitrary code by design (the same residual holds for ``awk``
+programs, which can ``system()``, and ``make`` targets). What vetting removes
+is *shell-syntax* injection smuggled into an otherwise innocuous-looking
+command on an untrusted branch: command substitution, backticks, background
+``&``, redirects to files, here-docs, pipeline heads outside a small
+executable allowlist, and env prefixes like ``PATH=`` that would subvert
+that allowlist with a repo-planted binary.
+
+Rules enforced by :func:`vet_check_cmd`:
+
+- backticks are refused anywhere; ``$`` is refused outside single quotes
+  (double quotes do not stop the shell from expanding either);
+- outside quotes, ``& < ( ) ~ #`` and newlines are refused; ``>`` is allowed
+  only as the exact redirect ``2>/dev/null`` / ``>/dev/null``;
+- the command splits on unquoted ``|`` / ``;`` into segments; after optional
+  assignments (only :data:`ALLOWED_ASSIGNMENTS` names — ``PATH=`` or
+  ``LD_PRELOAD=`` would redirect the head lookup itself), each segment's
+  head executable must be in :data:`ALLOWED_EXECUTABLES`.
+"""
+
+from __future__ import annotations
+
+import re
+import shlex
+import subprocess
+
+#: Pipeline-head executables the fleet's check commands actually use.
+ALLOWED_EXECUTABLES = frozenset(
+    {"grep", "awk", "python3", "wc", "echo", "make", "test", "pdfinfo", "mdls"}
+)
+
+_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+#: Env names a command may set as a prefix. Deliberately tiny: the fleet uses
+#: only PYTHONPATH, and names like PATH / LD_PRELOAD / PYTHONSTARTUP would let
+#: a repo-planted file subvert the executable allowlist below.
+ALLOWED_ASSIGNMENTS = frozenset({"PYTHONPATH"})
+# The lookahead pins the target: `2>/dev/nullX` must not pass as a prefix match.
+_REDIRECT_RE = re.compile(r"2?>/dev/null(?=[\s|;]|$)")
+
+#: Characters refused in unquoted text (beyond the specially-handled > | ;).
+_FORBIDDEN_UNQUOTED = frozenset("&<()~#\n\r")
+
+
+class UnvettedCommandError(RuntimeError):
+    """A check command failed vetting and was not executed."""
+
+
+def _spans(cmd: str):
+    """Yield (context, char, index) with context in {"plain", "single", "double"}.
+
+    Tracks POSIX quoting: backslash escapes the next char outside quotes and
+    inside double quotes; inside single quotes everything is literal. Raises
+    UnvettedCommandError on an unterminated quote or trailing backslash.
+    """
+    ctx = "plain"
+    i = 0
+    n = len(cmd)
+    while i < n:
+        ch = cmd[i]
+        if ctx == "plain":
+            if ch == "\\":
+                if i + 1 >= n:
+                    raise UnvettedCommandError("trailing backslash")
+                i += 2
+                continue
+            if ch == "'":
+                ctx = "single"
+            elif ch == '"':
+                ctx = "double"
+            else:
+                yield ctx, ch, i
+        elif ctx == "single":
+            if ch == "'":
+                ctx = "plain"
+            else:
+                yield ctx, ch, i
+        else:  # double
+            if ch == "\\":
+                if i + 1 >= n:
+                    raise UnvettedCommandError("trailing backslash")
+                yield ctx, cmd[i + 1], i + 1
+                i += 2
+                continue
+            if ch == '"':
+                ctx = "plain"
+            else:
+                yield ctx, ch, i
+        i += 1
+    if ctx != "plain":
+        raise UnvettedCommandError("unterminated quote")
+
+
+def vet_check_cmd(cmd: str) -> str | None:
+    """Return None when *cmd* is safe to run through the shell, else a reason.
+
+    Never raises for ordinary rejections — parse problems (unterminated
+    quotes) are folded into the returned reason string.
+    """
+    if not cmd or not cmd.strip():
+        return "empty command"
+    if "`" in cmd:
+        return "backtick"
+
+    # Split into segments at UNQUOTED, UNESCAPED | / ; only. Each segment is a
+    # (start, end) span of the ORIGINAL string, so shlex below re-does the exact
+    # backslash/quote processing /bin/sh will do — it must never see a different
+    # head token than the shell runs (the `\cmake`-vetted-as-`make` bypass).
+    spans: list[tuple[int, int]] = []
+    seg_start = 0
+    try:
+        for ctx, ch, i in _spans(cmd):
+            if ctx == "single":
+                continue
+            if ch == "$":
+                return "'$' outside single quotes (shell would expand it)"
+            if ctx == "double":
+                continue
+            if ch in _FORBIDDEN_UNQUOTED:
+                return f"forbidden shell character {ch!r}"
+            if ch == ">":
+                # Only the literal 2>/dev/null or >/dev/null redirect. The chars
+                # stay in the segment span; shlex tokenizes 2>/dev/null harmlessly.
+                start = i - 1 if i > 0 and cmd[i - 1] == "2" else i
+                if not _REDIRECT_RE.match(cmd, start):
+                    return "redirect other than [2]>/dev/null"
+                continue
+            if ch in "|;":
+                spans.append((seg_start, i))
+                seg_start = i + 1
+    except UnvettedCommandError as exc:
+        return str(exc)
+    spans.append((seg_start, len(cmd)))
+
+    seen_head = False
+    for start, end in spans:
+        segment = cmd[start:end]
+        if not segment.strip():
+            continue  # the empty span inside "||"
+        reason = _vet_segment_head(segment)
+        if reason:
+            return reason
+        seen_head = True
+    if not seen_head:
+        return "no command found"
+    return None
+
+
+def _vet_segment_head(segment: str) -> str | None:
+    """Check one pipeline/sequence segment's head executable."""
+    try:
+        tokens = shlex.split(segment, posix=True)
+    except ValueError as exc:
+        return f"unparseable segment: {exc}"
+    for tok in tokens:
+        m = _ASSIGNMENT_RE.match(tok)
+        if m:
+            name = tok.split("=", 1)[0]
+            if name not in ALLOWED_ASSIGNMENTS:
+                return f"env assignment {name!r} not allowed (could subvert the allowlist)"
+            continue  # allowed prefix; its value already passed the char scan
+        if tok in ALLOWED_EXECUTABLES:
+            return None
+        return f"executable {tok!r} not in the check-command allowlist"
+    return "segment has no executable"
+
+
+def run_vetted(
+    cmd: str, *, cwd: str, timeout: int
+) -> subprocess.CompletedProcess:
+    """Vet *cmd*, then run it through the shell exactly as before.
+
+    Raises UnvettedCommandError instead of executing when vetting fails.
+    """
+    reason = vet_check_cmd(cmd)
+    if reason is not None:
+        raise UnvettedCommandError(f"{reason} in: {cmd}")
+    return subprocess.run(
+        cmd,
+        shell=True,  # noqa: S602 — vetted above; fleet commands need shell syntax
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        cwd=cwd,
+    )

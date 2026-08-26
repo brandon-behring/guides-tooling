@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from tooling._fail_loud import warn_audit_error
 
 
 # Custom YAML dumper: force block style (|) for multi-line strings so that
@@ -237,7 +238,9 @@ def load_existing_los_ids(output_file: Path) -> dict[str, str]:
             for card in cards
             if card.get('los_id')
         }
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 — losing the LOS map silently strips
+        # los_id from re-extracted cards; degrade visibly
+        warn_audit_error("extract_cards.los_map", output_file, exc)
         return {}
 
 
@@ -3570,7 +3573,8 @@ def _resolve_tikz_setting(cli_choice: str, output_dir: Path) -> bool:
                 with open(candidate, encoding='utf-8') as f:
                     data = yaml.safe_load(f) or {}
                 return bool((data.get('cards') or {}).get('render_tikz', False))
-            except Exception:
+            except Exception as exc:  # noqa: BLE001 — fall back to no-render, visibly
+                warn_audit_error("extract_cards.render_tikz", candidate, exc)
                 return False
         if guide_root.parent == guide_root:
             break
