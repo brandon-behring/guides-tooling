@@ -941,16 +941,23 @@ def check_gate7_currency(guide_dir: Path, qa: dict, now: datetime) -> GateResult
 _UNDEF_CITE_RE = re.compile(
     r"(?i)(?:undefined (?:reference|citation)|(?:reference|citation) `[^']*'[^\n]*undefined"
     r"|there were undefined (?:references|citations))")
-# A biber HARD error only (``> ERROR -`` / ``> FATAL -``); the "too many commas,
-# skipping entry" failure is itself reported on a ``> ERROR -`` line, so matching a
-# bare "skipping entry" would only add false positives (benign INFO skip lines).
+# A biber HARD error (``> ERROR -`` / ``> FATAL -``) OR a ``> WARN - ... skipping``
+# line (gt#33 row 4). On a duplicate entry key ("Duplicate entry key: 'x' in file
+# 'references.bib', skipping ..."), a missing required field or an unknown entry
+# type, biber DROPS the entry and logs only a WARN -- the .bbl then binds every
+# \cite{x} to whichever duplicate survived, silently (gold-wave review 2026-08-27,
+# A6: two live-Gold guides read "biber clean" this way). The benign WARN class
+# ("BibTeX subsystem: warning: comma(s) at end of name (removing)") never says
+# "skipping"; INFO-level skip lines are excluded by the "> WARN - " anchor.
 _BIBER_ERR_RE = re.compile(r"> (?:ERROR|FATAL) -")
+_BIBER_SKIP_RE = re.compile(r"> WARN - (?P<msg>[^\n]*\bskipping\b[^\n]*)")
 
 
 def check_gate_build(guide_dir: Path) -> GateResult:
     """GB: fresh 2-pass ``make digital`` with a clean log (LaTeX errors, undefined
-    cites/refs, and biber errors all fail it -- a non-zero make rc is not required
-    because guide Makefiles may ``-``-ignore the underlying tool's exit code)."""
+    cites/refs, biber errors AND biber "skipping" warnings -- a dropped bib entry --
+    all fail it; a non-zero make rc is not required because guide Makefiles may
+    ``-``-ignore the underlying tool's exit code)."""
     from tooling.qa.guide_readiness import _LATEX_ERROR_RE
     guide_sub = guide_dir / "guide"
     name = "GB: clean 2-pass build"
@@ -969,8 +976,10 @@ def check_gate_build(guide_dir: Path) -> GateResult:
     err_lines = [ln.strip() for ln in log_text.splitlines() if _LATEX_ERROR_RE.match(ln)]
     undef = bool(_UNDEF_CITE_RE.search(log_text))
     blg = guide_sub / "main_digital.blg"
-    biber_err = bool(blg.exists() and _BIBER_ERR_RE.search(blg.read_text(errors="replace")))
-    if proc.returncode == 0 and not err_lines and not undef and not biber_err:
+    blg_text = blg.read_text(errors="replace") if blg.exists() else ""
+    biber_err = bool(_BIBER_ERR_RE.search(blg_text))
+    biber_skip = _BIBER_SKIP_RE.search(blg_text)
+    if proc.returncode == 0 and not err_lines and not undef and not biber_err and not biber_skip:
         return GateResult(name, True, "rc=0; 0 LaTeX errors; cites + biber clean")
     parts = [f"rc={proc.returncode}"]
     if err_lines:
@@ -979,7 +988,9 @@ def check_gate_build(guide_dir: Path) -> GateResult:
         parts.append("undefined reference/citation in log")
     if biber_err:
         parts.append("biber ERROR in .blg (failed/skipped entry)")
-    if proc.returncode != 0 and not (err_lines or undef or biber_err):
+    if biber_skip:
+        parts.append(f"biber WARN skipped entry in .blg: {biber_skip.group('msg')[:70]}")
+    if proc.returncode != 0 and not (err_lines or undef or biber_err or biber_skip):
         parts.append("build rc!=0 (see main_digital.log)")
     return GateResult(name, False, "; ".join(parts))
 
