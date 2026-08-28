@@ -105,6 +105,12 @@ python3 -m tooling.audits.fleet.audit_all_courses --summary
 ```
 
 - Discovers courses by walking the repo for `guide_qa.yaml` files (83 today).
+  `tooling/discovery.py` never walks `reports/`, `scripts/`, `docs/` or the
+  other non-guide trees, accepts a nested guide only under a topic dir the
+  registry (`guides.yml`) declares, and **raises `DuplicateGuideSlug`** when
+  two dirs share a basename (gt#33 / r2 DRIVER-1: rsync scratch copies under
+  `reports/_scratch/` used to shadow the real guides silently). `--strict` also
+  exits 1 when a registered slug has no dir on disk.
 - Runs the 10-point structural checklist (see [`tier_model.md`](tier_model.md)
   §Bronze; check 10 = stub-free includes).
 - Writes a fresh `reports/qa_fleet_audit_<YYYYMMDD>.md`.

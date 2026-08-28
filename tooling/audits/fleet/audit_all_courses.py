@@ -40,12 +40,6 @@ from pathlib import Path
 from tooling import discovery, layout, paths
 
 REPORTS_DIR = paths.host_root() / "reports"
-EXCLUDE_DIRS = {
-    "shared", "scripts", "_archived", ".git", ".claude", "docs", "reports",
-    "templates",
-    # Non-guide artifacts (curriculum / reading-list documents, not course guides):
-    "manning_curriculum",
-}
 
 # Silver audit helpers
 from tooling._fail_loud import read_text_or_warn, warn_audit_error
@@ -65,10 +59,27 @@ STANDARD_LEVELS = {
 def discover_courses() -> list[Path]:
     """Find all guide directories (recursive; handles topic-nested layouts).
 
-    Delegates to the centralized recursive walk and drops known non-guide dirs
-    (curriculum / reading-list folders) by basename.
+    Delegates to :func:`tooling.discovery.iter_guide_dirs`, which owns the
+    non-guide exclusions (the old basename-filtered ``EXCLUDE_DIRS`` here could
+    not see a copy nested under ``reports/`` -- gt#33 / DRIVER-1).
     """
-    return [g for g in discovery.iter_guide_dirs() if g.name not in EXCLUDE_DIRS]
+    return discovery.iter_guide_dirs()
+
+
+def registry_slugs_missing_on_disk(courses: list[Path]) -> list[str]:
+    """Registry slugs (``guides.yml``, non-archived) with no discovered guide dir.
+
+    The registry-topic allowlist in discovery hides a guide whose topic dir was
+    renamed or never registered; this guard makes that loud instead of letting the
+    fleet shrink silently. ``[]`` when the host has no registry.
+    """
+    from tooling import scope
+
+    try:
+        registered = {g.slug for g in scope.get_all_guides()}
+    except FileNotFoundError:
+        return []
+    return sorted(registered - {c.name for c in courses})
 
 
 def check_guide_qa(course: Path) -> tuple[str, str]:
@@ -512,6 +523,14 @@ def main() -> None:
         print("No courses found with guide_qa.yaml")
         return
 
+    missing = registry_slugs_missing_on_disk(courses)
+    if missing:
+        print(
+            f"REGISTRY: {len(missing)} guides.yml slug(s) have no guide dir on disk: "
+            f"{', '.join(missing)}",
+            file=sys.stderr,
+        )
+
     print(f"Auditing {len(courses)} courses...")
     audits = [audit_course(c) for c in courses]
 
@@ -555,6 +574,12 @@ def main() -> None:
                 f"{', '.join(sorted(failing))}",
                 file=sys.stderr,
             )
+        if missing:
+            print(
+                f"\nSTRICT: {len(missing)} registered guide(s) missing on disk (see REGISTRY line)",
+                file=sys.stderr,
+            )
+        if failing or missing:
             sys.exit(1)
 
 

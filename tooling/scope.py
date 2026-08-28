@@ -25,8 +25,13 @@ class GuideInfo:
     chapters: int
     lines: int
     status: str = ""  # publication status from guides.yml ("published" | "meap" | "")
+    topic: str = ""   # topic dir the guide nests under (guides.yml `topic:`), "" when flat
 
     def guide_dir(self) -> Path:
+        # Topic-nested when the registry says so; flat otherwise. (Callers that need
+        # the on-disk truth resolve through tooling.discovery / _guide_scope.)
+        if self.topic:
+            return paths.host_root() / self.topic / self.slug
         return paths.host_root() / self.slug
 
     def chapter_files(self) -> list[Path]:
@@ -62,6 +67,7 @@ def get_all_guides() -> list[GuideInfo]:
                 chapters=g.get("chapters", 0),
                 lines=g.get("lines", 0),
                 status=g.get("status", ""),
+                topic=g.get("topic", "") or "",
             )
         )
     return out

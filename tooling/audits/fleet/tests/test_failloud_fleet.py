@@ -170,3 +170,17 @@ def test_filter_silver_pass_keeps_errored_guide(tmp_path, monkeypatch, capsys):
     assert passing == [good]
     assert [(p.name, type(e).__name__) for p, e in errored] == [("bad", "OSError")]
     assert "[audit-error] audit_gold.filter_silver_pass" in capsys.readouterr().err
+
+
+# ── audit_all_courses.registry_slugs_missing_on_disk (gt#33 row 1 guard) ─────
+
+def test_registry_slug_missing_on_disk_is_reported(tmp_path, monkeypatch):
+    monkeypatch.setenv("GUIDES_HOST_ROOT", str(tmp_path))
+    (tmp_path / "guides.yml").write_text("guides:\n  - slug: g1\n    topic: t\n  - slug: g2\n    topic: t\n")
+    (tmp_path / "t" / "g1").mkdir(parents=True)
+    assert audit_all_courses.registry_slugs_missing_on_disk([tmp_path / "t" / "g1"]) == ["g2"]
+
+
+def test_registry_absent_means_nothing_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("GUIDES_HOST_ROOT", str(tmp_path))
+    assert audit_all_courses.registry_slugs_missing_on_disk([]) == []
