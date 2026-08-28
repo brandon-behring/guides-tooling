@@ -111,11 +111,12 @@ REPORTS_DIR = paths.host_root() / "reports"
 # tooling toggle. Flip these two to ["--strict"] once that pass lands. They are
 # still invoked (flagless) so a future leading "FAIL" line is caught, not skipped.
 #
-# audit_checkpoint_originality is likewise registered FLAGLESS during the
-# warning-first rollout of the template-tailing detector: in advisory mode it
-# reports but never emits a "FAIL" line, so it gates nothing (Gold count is
-# unchanged). Flip it to ["--strict"] -- and relabel G2 "14-audit" -- once the
-# checkpoint sweep clears the fleet to zero template-tailed items.
+# audit_checkpoint_originality and audit_content_substance are registered FLAGLESS
+# during the warning-first rollout of their detectors: in advisory mode each
+# reports but never emits a "FAIL" line, so neither gates anything (Gold count is
+# unchanged). Flip each to ["--strict"] -- and relabel G2 (14-/15-audit) -- once
+# its sweep clears the fleet (originality: zero template-tailed / verbatim-LOS
+# items; content_substance: margin-clone rate under MAX_DUP_RATE fleet-wide).
 GUIDE_AUDITS: dict[str, list[str]] = {
     "audit_atomicity": ["--check"],
     "audit_box_styles": ["--strict"],       # gated: every used tcolorbox style is defined
@@ -126,6 +127,8 @@ GUIDE_AUDITS: dict[str, list[str]] = {
                                             # checkpoints; flip to ["--strict"] post-sweep
     "audit_content_freshness": ["--strict"],
     "audit_content_quality": ["--strict"],
+    "audit_content_substance": [],          # advisory (warning-first): cloned margins /
+                                            # no retrieval; flip to ["--strict"] post-sweep
     "audit_crossref_quality": [],           # exits 1 on broken refs
     "audit_margin_quality": ["--strict-templates"],  # gated: 0 content-free templated
                                             # margins (density/quality --strict still T2b)

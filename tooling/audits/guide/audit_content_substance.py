@@ -53,6 +53,7 @@ from tooling.audits.guide._guide_scope import (
     guide_dir_for_slug,
     guide_dirs,
 )
+from tooling.validation._latex import iter_macro_args, strip_latex_comments
 
 # A margin payload repeated verbatim in >= MIN_CLONES places is generator residue,
 # not authorship. 2 is deliberate: the same note in two chapters already breaks
@@ -61,9 +62,10 @@ from tooling.audits.guide._guide_scope import (
 MIN_CLONES = 2
 
 # Share of a guide's margin INSTANCES that may be verbatim repeats before the guide
-# is flagged. 0.30 sits well above the hand-authored fleet (measured: the guides
-# with genuine per-chapter margins score 0%) and well below the generator cohort
-# (62-100%).
+# is flagged. Re-baselined 2026-08-28 with the brace-balanced scanner (8215 margins
+# seen, was 6392): 77 of 83 guides score under 10%, the highest hand-authored guide
+# is 18% (text_to_image_from_scratch, 14/77), and the generator cohort sits at
+# 61-90% -- 0.30 stays in the empty gap between the two populations.
 MAX_DUP_RATE = 0.30
 
 # content_design.md / quality_targets.md put problems at 15+ per guide and vignettes
@@ -71,9 +73,14 @@ MAX_DUP_RATE = 0.30
 # guide has SOME retrieval practice: zero of both is a shell.
 MIN_RETRIEVAL_ARTIFACTS = 1
 
-MARGIN_RE = re.compile(
-    r"\\(?:interview|pattern|formula|warning|practice|crossref|exam)margin\{(.+?)\}\s*$",
-    re.M,
+# The seven convenience margin macros (content_design.md). Payloads are read with a
+# brace-balanced scanner, NOT an end-of-line-anchored regex: the old
+# ``\...margin\{(.+?)\}\s*$`` pattern could not see a note whose text wraps onto a
+# second line, which is how 1823 of the fleet's 8215 margins (22%; 64 of
+# ai_agent_from_scratch's 65) were invisible to this audit (gt#33 row 9).
+MARGIN_MACROS: tuple[str, ...] = (
+    "interviewmargin", "patternmargin", "formulamargin", "warningmargin",
+    "practicemargin", "crossrefmargin", "exammargin",
 )
 PROBLEM_RE = re.compile(r"\\begin\{problem\}")
 VIGNETTE_RE = re.compile(r"\\begin\{vignette\}")
@@ -125,10 +132,11 @@ def measure(guide_dir: Path) -> Substance:
             text = ch.read_text(errors="replace")
         except OSError:
             continue
+        text = strip_latex_comments(text)  # a commented-out margin/problem is not content
         problems += len(PROBLEM_RE.findall(text))
         vignettes += len(VIGNETTE_RE.findall(text))
-        for payload in MARGIN_RE.findall(text):
-            key = " ".join(payload.split())
+        for _macro, payload, _offset in iter_macro_args(text, MARGIN_MACROS):
+            key = " ".join(payload.split())  # wrapped copies of one note are one note
             payloads[key].append(ch.name)
             total_margins += 1
 
@@ -194,7 +202,8 @@ def main() -> None:
                     help="rank the whole fleet worst-first as a markdown table")
     ap.add_argument("--json", action="store_true", help="emit JSON (with --guide)")
     ap.add_argument("--strict", "--check", dest="strict", action="store_true",
-                    help="exit 1 if the guide is flagged (NOT yet wired into audit_gold G2)")
+                    help="exit 1 if the guide is flagged (registered FLAGLESS/advisory in "
+                         "audit_gold G2; flip to --strict after the margin-clone sweep)")
     args = ap.parse_args()
 
     if args.fleet:

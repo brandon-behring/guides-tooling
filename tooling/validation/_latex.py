@@ -8,6 +8,9 @@ parity) and a literal percent inside a url-family argument — and documents the
 """
 from __future__ import annotations
 
+import re
+from typing import Iterable, Iterator
+
 # url-family commands whose first ``{...}`` argument may legitimately contain a literal ``%`` (URL
 # percent-encoding, e.g. ``\url{http://x/a%20b}``); there ``%`` is NOT a comment start.
 _URL_CMDS: tuple[str, ...] = ("url", "nolinkurl", "path", "href")
@@ -69,3 +72,45 @@ def strip_latex_comments(content: str) -> str:
     not a full LaTeX tokenizer (``\verb|%|`` and ``verbatim`` environments are out of scope).
     """
     return "\n".join(_strip_line(ln) for ln in content.split("\n"))
+
+
+def iter_macro_args(text: str, names: Iterable[str]) -> Iterator[tuple[str, str, int]]:
+    r"""Yield ``(macro, payload, offset)`` for every ``\<name>{...}`` in *text* whose braces balance.
+
+    A brace-balanced char walk, not a regex to end-of-line (gt#33 row 9): the payload may wrap
+    across lines and may contain nested groups (``\textbf{...}``, ``$\mathrm{Beta}(4,2)$``,
+    ``\{`` / ``\}`` escapes) -- all of which a ``\}\s*$``-anchored pattern truncates or misses.
+
+    - ``names`` are bare macro names (``"interviewmargin"``); the match requires the opening
+      brace immediately after the name (optional whitespace), so ``\interviewmarginx{`` is not a hit.
+    - A backslash escapes the next character, so ``\{`` and ``\}`` never change the depth and
+      ``\\`` is consumed as a unit.
+    - An unterminated argument (EOF before the matching ``}``) is skipped, not yielded.
+    - Comments are NOT stripped here; pass comment-stripped text (:func:`strip_latex_comments`)
+      when a commented-out macro must not count.
+
+    ``offset`` is the index of the backslash that starts the macro (for line-number reporting).
+
+    >>> list(iter_macro_args(r"\patternmargin{a \textbf{b} c}", ["patternmargin"]))
+    [('patternmargin', 'a \\textbf{b} c', 0)]
+    """
+    alts = "|".join(re.escape(n) for n in sorted(set(names), key=len, reverse=True))
+    if not alts:
+        return
+    head = re.compile(r"\\(" + alts + r")\s*\{")
+    n = len(text)
+    for m in head.finditer(text):
+        depth, i, start = 1, m.end(), m.end()
+        while i < n:
+            c = text[i]
+            if c == "\\":
+                i += 2  # escaped pair: \{ \} \\ \% -- never a delimiter
+                continue
+            if c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    yield m.group(1), text[start:i], m.start()
+                    break
+            i += 1
