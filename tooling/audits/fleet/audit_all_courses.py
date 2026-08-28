@@ -32,14 +32,17 @@ from __future__ import annotations
 
 import argparse
 import os
+import pathlib
 import re
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
 from tooling import discovery, layout, paths
 from tooling._fail_loud import read_text_or_warn, warn_audit_error
-from tooling.audits.fleet.audit_silver import audit_guide as audit_silver_honest_guide  # Silver gate
+# Silver gate: the authoritative four-content-gate auditor.
+from tooling.audits.fleet.audit_silver import audit_guide as audit_silver_honest_guide
 from tooling.validation._latex import strip_latex_comments
 
 REPORTS_DIR = paths.host_root() / "reports"
@@ -240,16 +243,40 @@ def check_hardcoded_paths(course: Path) -> tuple[str, str]:
 
 
 # Check 10 -- stub-free includes (gt#33 row 3 / gold-wave review 2026-08-27 A1).
-INCLUDE_RE = re.compile(r"\\(?:input|include)\s*\{([^}]+)\}")
+INCLUDE_RE = re.compile(
+    r"\\(?:input|include)\s*(?:\{([^}]+)\}|([^\s{\\%]+))"
+)
 # Lines that are document *structure*, not body: a file consisting only of these
 # (plus blank lines / comments) has no content. \begin{learningoutcomes}, \los{},
 # \section prose etc. all count as content, so an LOS-only chapter is NOT a stub.
 _STRUCTURAL_LINE_RE = re.compile(
-    r"^\s*\\(?:chapter|section|subsection|subsubsection|label)\*?\s*[\[{]"
+    r"^\s*\\(?:chapter|section|subsection|subsubsection|label)\*?\s*"
+    r"(?:\[[^\]]*\])?\s*\{[^{}]*\}"
 )
 # The body's first content line announces a placeholder.
 _STUB_BODY_RE = re.compile(r"^\s*(?:TODO|TBD|FIXME|PLACEHOLDER)\b", re.IGNORECASE)
 _MAX_LISTED_PROBLEMS = 3
+
+
+# Formatting-only wrappers stripped before the placeholder test, so a body whose
+# whole payload is ``\textbf{TODO: write this}`` or ``\item TODO`` is still a stub.
+_WRAPPER_RE = re.compile(
+    r"\\(?:textbf|textit|emph|texttt|item|par|noindent|centering)\b\s*|[{}]"
+)
+
+
+def _body_lines(text: str) -> list[str]:
+    """Non-blank content lines: comments dropped, structural COMMANDS removed.
+
+    Only the command and its arguments go; text sharing the line with it stays, so
+    ``\\section{Overview} Real prose.`` is content, not an empty body.
+    """
+    out = []
+    for raw in strip_latex_comments(text).splitlines():
+        line = _STRUCTURAL_LINE_RE.sub("", raw, count=1).strip()
+        if line:
+            out.append(line)
+    return out
 
 
 def classify_include_body(text: str) -> str | None:
@@ -260,15 +287,14 @@ def classify_include_body(text: str) -> str | None:
     line left => ``"empty"``; first remaining line starting with TODO / TBD / FIXME /
     PLACEHOLDER => ``"stub"``; anything else is real content (``None``).
 
-    >>> classify_include_body("\\\\chapter{Quick Reference}\\n\\\\label{app:qr}\\nTODO: add tables\\n")
+    >>> classify_include_body("\\\\chapter{QR}\\nTODO: add tables\\n")
     'stub'
-    >>> classify_include_body("\\\\chapter{X}\\n\\\\begin{learningoutcomes}\\n\\\\end{learningoutcomes}\\n")
+    >>> classify_include_body("\\\\chapter{X}\\n\\\\section{Y} Real prose.\\n")
     """
-    lines = [ln for ln in strip_latex_comments(text).splitlines() if ln.strip()]
-    content = [ln for ln in lines if not _STRUCTURAL_LINE_RE.match(ln)]
+    content = _body_lines(text)
     if not content:
         return "empty"
-    if _STUB_BODY_RE.match(content[0]):
+    if _STUB_BODY_RE.match(_WRAPPER_RE.sub("", content[0]).strip()):
         return "stub"
     return None
 
@@ -289,9 +315,11 @@ def check_main_includes(course: Path) -> tuple[str, str]:
         return "RED", "guide/main.tex unreadable"
     problems: list[str] = []
     resolved = 0
-    for target in INCLUDE_RE.findall(strip_latex_comments(text)):
-        rel = target.strip()
-        if not rel.endswith(".tex"):
+    for braced, bare in INCLUDE_RE.findall(strip_latex_comments(text)):
+        rel = (braced or bare).strip()
+        # Only an EXTENSIONLESS target gets ``.tex``; ``preamble.ltx`` is not
+        # ``preamble.ltx.tex`` (review of #35).
+        if "." not in pathlib.PurePosixPath(rel).name:
             rel += ".tex"
         resolved += 1
         path = main.parent / rel
@@ -309,15 +337,20 @@ def check_main_includes(course: Path) -> tuple[str, str]:
             problems.append(f"TODO body: {rel}")
     if problems:
         shown = "; ".join(problems[:_MAX_LISTED_PROBLEMS])
-        extra = f" (+{len(problems) - _MAX_LISTED_PROBLEMS} more)" if len(problems) > _MAX_LISTED_PROBLEMS else ""
+        rest = len(problems) - _MAX_LISTED_PROBLEMS
+        extra = f" (+{rest} more)" if rest > 0 else ""
         return "RED", f"{len(problems)} include(s): {shown}{extra}"
+    if not resolved:
+        # A main.tex that includes nothing is not a pass: the check would be
+        # vacuous, and a lost include list should be visible (review of #35).
+        return "YELLOW", "no \\input/\\include targets found in guide/main.tex"
     return "GREEN", f"{resolved} includes resolved, stub-free"
 
 
 # The Bronze checklist, in report order. BRONZE_TOTAL is the single denominator
 # every score / docstring / summary derives from (gt#33: adding check 10 must not
 # leave a stale literal behind).
-BRONZE_CHECKS: list[tuple[str, "callable"]] = [
+BRONZE_CHECKS: list[tuple[str, Callable[[Path], tuple[str, str]]]] = [
     ("guide_qa.yaml", check_guide_qa),
     ("Validation tooling", check_validation_symlinks),
     ("Makefile QA targets", check_makefile_qa),
@@ -454,7 +487,8 @@ def format_report(audits: list[dict]) -> str:
         f"- **Fully compliant ({BRONZE_TOTAL}/{BRONZE_TOTAL})**: {fully_compliant}/{len(audits)}",
         f"- **Partial (4-{BRONZE_TOTAL - 1}/{BRONZE_TOTAL})**: "
         f"{sum(1 for a in audits if 4 <= a['green'] < BRONZE_TOTAL)}/{len(audits)}",
-        f"- **Minimal (0-3/{BRONZE_TOTAL})**: {sum(1 for a in audits if a['green'] < 4)}/{len(audits)}",
+        f"- **Minimal (0-3/{BRONZE_TOTAL})**: "
+        f"{sum(1 for a in audits if a['green'] < 4)}/{len(audits)}",
         "",
         f"### Silver (Bronze {BRONZE_TOTAL}/{BRONZE_TOTAL} + four content gates)",
         "",
@@ -516,10 +550,8 @@ def main() -> None:
     args = parser.parse_args()
 
     courses = discover_courses()
-    if not courses:
-        print("No courses found with guide_qa.yaml")
-        return
-
+    # The guard runs BEFORE the empty-fleet return: a registry with guides and a
+    # disk with none is exactly the disappearance it exists to catch (review of #35).
     missing = registry_slugs_missing_on_disk(courses)
     if missing:
         print(
@@ -527,6 +559,16 @@ def main() -> None:
             f"{', '.join(missing)}",
             file=sys.stderr,
         )
+    if not courses:
+        print("No courses found with guide_qa.yaml")
+        if args.strict and missing:
+            print(
+                f"\nSTRICT: {len(missing)} registered guide(s) missing on disk "
+                "(see REGISTRY line)",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        return
 
     print(f"Auditing {len(courses)} courses...")
     audits = [audit_course(c) for c in courses]

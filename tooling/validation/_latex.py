@@ -75,14 +75,15 @@ def strip_latex_comments(content: str) -> str:
 
 
 def iter_macro_args(text: str, names: Iterable[str]) -> Iterator[tuple[str, str, int]]:
-    r"""Yield ``(macro, payload, offset)`` for every ``\<name>{...}`` in *text* whose braces balance.
+    r"""Yield ``(macro, payload, offset)`` for every ``\<name>{...}`` whose braces balance.
 
     A brace-balanced char walk, not a regex to end-of-line (gt#33 row 9): the payload may wrap
     across lines and may contain nested groups (``\textbf{...}``, ``$\mathrm{Beta}(4,2)$``,
     ``\{`` / ``\}`` escapes) -- all of which a ``\}\s*$``-anchored pattern truncates or misses.
 
     - ``names`` are bare macro names (``"interviewmargin"``); the match requires the opening
-      brace immediately after the name (optional whitespace), so ``\interviewmarginx{`` is not a hit.
+      brace immediately after the name (optional whitespace), so ``\interviewmarginx{``
+      is not a hit.
     - A backslash escapes the next character, so ``\{`` and ``\}`` never change the depth and
       ``\\`` is consumed as a unit.
     - An unterminated argument (EOF before the matching ``}``) is skipped, not yielded.

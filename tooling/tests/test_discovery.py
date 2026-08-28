@@ -64,8 +64,24 @@ def test_dotdir_and_mount_are_skipped(tmp_path):
     assert _found(tmp_path) == ["topic-a/g1"]
 
 
-def test_duplicate_slug_raises(tmp_path):
+def test_registered_slug_is_pinned_to_its_own_topic(tmp_path):
+    # g1 is registered to topic-a, so a copy under topic-b is not the guide and is
+    # skipped; the registry-vs-disk guard then reports nothing missing (review of #35).
     (tmp_path / "guides.yml").write_text(REGISTRY)
     _mk(tmp_path, "topic-a/g1", "topic-b/g1")
-    with pytest.raises(discovery.DuplicateGuideSlug, match=r"topic-a/g1 and topic-b/g1"):
+    assert _found(tmp_path) == ["topic-a/g1"]
+
+
+def test_duplicate_unregistered_slug_raises(tmp_path):
+    # The registry cannot adjudicate an unregistered slug, so two copies of it are a
+    # fleet-level error rather than a tie to break (DRIVER-1).
+    (tmp_path / "guides.yml").write_text(REGISTRY)
+    _mk(tmp_path, "topic-a/ghost", "topic-b/ghost")
+    with pytest.raises(discovery.DuplicateGuideSlug, match=r"topic-a/ghost and topic-b/ghost"):
+        discovery.iter_guide_dirs()
+
+
+def test_duplicate_slug_raises_without_a_registry(tmp_path):
+    _mk(tmp_path, "anything/g1", "elsewhere/g1")   # no guides.yml at all
+    with pytest.raises(discovery.DuplicateGuideSlug):
         discovery.iter_guide_dirs()

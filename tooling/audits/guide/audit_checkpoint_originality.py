@@ -73,7 +73,9 @@ import sys
 from collections import defaultdict
 from dataclasses import dataclass
 
-from tooling._fail_loud import read_text_or_warn
+from pathlib import Path
+
+from tooling._fail_loud import read_text_or_warn, warn_audit_error
 from tooling.audits.fleet.audit_gold import CHECKPOINT_ITEM_RE  # single source of truth
 from tooling.audits.guide._guide_scope import (
     chapter_files,
@@ -195,7 +197,9 @@ def _answer_key_offsets(content: str) -> set[int]:
     return offsets
 
 
-def _guide_items(guide_dir, unreadable: list[str] | None = None) -> list[tuple[str, int, str, list[str]]]:
+def _guide_items(
+    guide_dir: "Path", unreadable: list[str] | None = None
+) -> list[tuple[str, int, str, list[str]]]:
     """Every checkpoint PROMPT (answer-key items excluded) as (file, line, los, words).
 
     An unreadable chapter is appended (by name) to ``unreadable`` when a list is
@@ -218,7 +222,7 @@ def _guide_items(guide_dir, unreadable: list[str] | None = None) -> list[tuple[s
     return items
 
 
-def _los_words_by_id(guide_dir) -> dict[str, list[str]]:
+def _los_words_by_id(guide_dir: "Path") -> dict[str, list[str]]:
     """``{LOS-ID: _norm_words("<level> <statement>")}`` over the guide's chapters.
 
     Comment-stripped, so a commented-out ``\\los{}`` cannot supply a match. Guide-wide
@@ -231,7 +235,18 @@ def _los_words_by_id(guide_dir) -> dict[str, list[str]]:
             continue  # already counted as unreadable by _guide_items
         for m in LOS_RE.finditer(strip_latex_comments(content)):
             los_id, level, statement = (g.strip() for g in m.groups())
-            out[los_id] = _norm_words(f"{level} {statement}")
+            words = _norm_words(f"{level} {statement}")
+            prev = out.get(los_id)
+            if prev is not None and prev != words:
+                # Two different statements under one id: which one signal C compares
+                # against would depend on chapter order, so say so rather than pick.
+                warn_audit_error(
+                    "audit_checkpoint_originality._los_words_by_id", tex,
+                    ValueError(f"duplicate \\los id {los_id!r} with differing text; "
+                               "signal C uses the first"),
+                )
+                continue
+            out[los_id] = words
     return out
 
 
@@ -265,7 +280,9 @@ class Templated:
         return LOS_REASON in _reason_kinds(self.reason)
 
 
-def find_template_tails(guide_dir, unreadable: list[str] | None = None) -> tuple[int, list[Templated]]:
+def find_template_tails(
+    guide_dir: "Path", unreadable: list[str] | None = None
+) -> tuple[int, list[Templated]]:
     """Return ``(checkpoint_prompts, templated_items)`` for one guide.
 
     ``templated_items`` carries every prompt hit by signal A, B or C; use
@@ -345,7 +362,7 @@ def fleet_suffix_frequency() -> str:
 
 def fleet_table() -> str:
     """A ranked (worst-first) markdown worklist over the whole fleet."""
-    rows: list[tuple[str, int, int, int, float, str]] = []
+    rows: list[tuple[str, int, int, int, float, str, int]] = []
     fleet_total = fleet_tails = fleet_los = 0
     for gd in guide_dirs():
         total, templated = find_template_tails(gd)
@@ -358,13 +375,15 @@ def fleet_table() -> str:
         fleet_los += los
         if templated:
             pct = len(templated) / total * 100
-            rows.append((gd.name, total, tails, los, pct, _reason_tally(templated)))
-    # Worst-first: by flagged count (rewrite workload), then % (egregiousness).
-    rows.sort(key=lambda r: (r[2] + r[3], r[4]), reverse=True)
+            rows.append((gd.name, total, tails, los, pct, _reason_tally(templated),
+                         len(templated)))
+    # Worst-first: by DISTINCT flagged prompts (the rewrite workload -- an item hit
+    # by both signals is rewritten once), then % (egregiousness).
+    rows.sort(key=lambda r: (r[6], r[4]), reverse=True)
 
     out = ["| Guide | Checkpoints | Template-tailed | Verbatim-LOS | % flagged | Reasons |",
            "|---|--:|--:|--:|--:|---|"]
-    for name, total, tails, los, pct, reasons in rows:
+    for name, total, tails, los, pct, reasons, _flagged in rows:
         out.append(f"| `{name}` | {total} | {tails} | {los} | {pct:.0f}% | {reasons} |")
     out.append("")
     pct_tails = (fleet_tails / fleet_total * 100) if fleet_total else 0.0
@@ -442,7 +461,10 @@ def main() -> None:
     # an unreadable chapter is an audit that could not run and fails either mode.
     # FAIL -> stderr; exit 1 is what audit_gold G2 keys on.
     strict_any = args.strict or args.strict_los
-    failing = (tails if args.strict else []) + (verbatim if args.strict_los else [])
+    # De-duplicate: an item hit by BOTH signal groups is one defect, not two
+    # (review of #35 -- it used to emit two identical FAIL lines).
+    selected = (tails if args.strict else []) + (verbatim if args.strict_los else [])
+    failing = list(dict.fromkeys(selected))
     if strict_any and (failing or unreadable):
         for t in failing:
             print(f"FAIL  {args.guide}: checkpoint {t.los_id} {t.reason} "

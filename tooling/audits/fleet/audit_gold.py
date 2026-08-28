@@ -236,7 +236,7 @@ WHAT_HOLDS_SECTION_RE = re.compile(
     r"^\s*\\section\*?\{[^}]*(?:still\s+hold|what\s+still|source[-\s]stability|stability)",
     re.MULTILINE | re.IGNORECASE,
 )
-F_POSITION_RE = re.compile(r"\\textbf\{\s*Position\s+[A-Z]\b")
+F_POSITION_RE = re.compile(r"\\textbf\{\s*Position\s+[A-Z]\b", re.IGNORECASE)
 # Resolvable citation markers (same family as the epilogue gate): a biblatex cite
 # command, an arXiv id, a DOI, or an http(s) permalink. Counted on comment-stripped
 # text so a fresh scaffold's commented example-cites do not satisfy the floor.
@@ -434,7 +434,8 @@ class GateResult:
 class HonestReport:
     slug: str
     gates: list[GateResult] = field(default_factory=list)
-    g5_reason: str = ""  # missing | unreadable | scaffold | short | thin_citations | no_ef_section | pass
+    # missing | unreadable | scaffold | short | thin_citations | no_ef_section | pass
+    g5_reason: str = ""
 
     @property
     def auto_gates_pass(self) -> bool:
@@ -976,7 +977,9 @@ _UNDEF_CITE_RE = re.compile(
 # ("BibTeX subsystem: warning: comma(s) at end of name (removing)") never says
 # "skipping"; INFO-level skip lines are excluded by the "> WARN - " anchor.
 _BIBER_ERR_RE = re.compile(r"> (?:ERROR|FATAL) -")
-_BIBER_SKIP_RE = re.compile(r"> WARN - (?P<msg>[^\n]*\bskipping\b[^\n]*)")
+# Case-insensitive: biber capitalizes the first word of some messages
+# ("WARN - Skipping entry ..."), and a dropped entry is a dropped entry.
+_BIBER_SKIP_RE = re.compile(r"> WARN - (?P<msg>[^\n]*\bskipping\b[^\n]*)", re.IGNORECASE)
 
 
 def check_gate_build(guide_dir: Path) -> GateResult:

@@ -49,14 +49,20 @@ class DuplicateGuideSlug(ValueError):
     """Two discovered guide directories share a basename (slug)."""
 
 
-def _registry_topics() -> frozenset[str] | None:
-    """Topic dir names declared in the host's ``guides.yml``; ``None`` without a registry."""
+def _registry() -> tuple[frozenset[str], dict[str, str]] | None:
+    """``(topic names, {slug: its topic})`` from the host's ``guides.yml``.
+
+    ``None`` when the host carries no registry, which drops the allowlist and
+    leaves ``_EXCLUDE`` as the only filter.
+    """
     from tooling import scope  # local: scope imports only layout/paths, no cycle
 
     try:
-        return frozenset(g.topic for g in scope.get_all_guides() if g.topic)
+        guides = scope.get_all_guides()
     except FileNotFoundError:
         return None
+    return (frozenset(g.topic for g in guides if g.topic),
+            {g.slug: g.topic for g in guides if g.topic})
 
 
 def iter_guide_dirs() -> list[Path]:
@@ -70,14 +76,23 @@ def iter_guide_dirs() -> list[Path]:
     root = paths.host_root()
     if not root.is_dir():
         return []
-    topics = _registry_topics()
+    reg = _registry()
     seen: dict[str, Path] = {}
     for qa in sorted(root.rglob("guide_qa.yaml")):
         rel_parents = qa.relative_to(root).parts[:-1]  # dirs above the file
         if any(p in _EXCLUDE or p.startswith(".") for p in rel_parents):
             continue
-        if topics and len(rel_parents) >= 2 and rel_parents[0] not in topics:
-            continue  # nested under a top-level dir the registry does not know
+        if reg is not None and len(rel_parents) >= 2:
+            topics, topic_of = reg
+            expected = topic_of.get(rel_parents[-1])
+            if expected is not None:
+                # A REGISTERED slug must sit under its own registered topic; a copy
+                # under someone else's topic is not the guide (review of #35). The
+                # registry-vs-disk guard then reports it as missing, loudly.
+                if rel_parents[0] != expected:
+                    continue
+            elif topics and rel_parents[0] not in topics:
+                continue  # unregistered slug under a dir the registry does not know
         d = qa.parent
         if d.name in seen:
             raise DuplicateGuideSlug(
