@@ -417,3 +417,40 @@ def test_assess_card_back_returns_multiple_findings() -> None:
     assert "H1" in rules  # below 40-char drill min
     assert "M2" in rules  # ends with ?
     assert "H4" in rules  # no MCQ, no **Answer:**
+
+
+# ── M5: boilerplate placeholder back (gt#33 / r2 review 2026-08-28) ──────────
+from tooling.audits.guide.audit_back_content import RULE_SEVERITY, check_m5_boilerplate_back  # noqa: E402
+
+EXTRACTOR_PLACEHOLDER = (
+    "Self-check from: Module 1 Checkpoint\n\n"
+    "(Answer from memory, then verify against the chapter text.)"
+)
+LEGACY_PLACEHOLDER = "(Answer from memory, then read the section to check.)"
+
+
+def test_m5_flags_extractor_placeholder() -> None:
+    r = check_m5_boilerplate_back(EXTRACTOR_PLACEHOLDER, "checkpoint")
+    assert r is not None and r[0] == "M5"
+
+
+def test_m5_flags_legacy_placeholder() -> None:
+    assert check_m5_boilerplate_back(LEGACY_PLACEHOLDER, "checkpoint") is not None
+
+
+def test_m5_ignores_real_back_mentioning_memory() -> None:
+    back = ("Answer from memory first: the three tool categories are information, action "
+            "and specialized. Then verify against the chapter text.")
+    assert check_m5_boilerplate_back(back, "checkpoint") is None
+
+
+def test_m5_is_medium_and_the_only_signal_on_a_placeholder_card() -> None:
+    assert RULE_SEVERITY["M5"] == "medium"
+    findings = assess_card_back(
+        {"front": "What distinguishes an SLM from an LLM? (DSS-1.1)",
+         "back": EXTRACTOR_PLACEHOLDER, "type": "checkpoint"})
+    assert [f[0] for f in findings] == ["M5"]   # 97 chars: H1's minimum (30) never fires
+
+
+def test_m5_fires_for_any_card_type() -> None:
+    assert check_m5_boilerplate_back(EXTRACTOR_PLACEHOLDER, "term") is not None
