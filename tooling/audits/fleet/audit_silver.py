@@ -72,6 +72,7 @@ from pathlib import Path
 import yaml
 
 from tooling import discovery, layout, paths
+from tooling._fail_loud import warn_audit_error
 from tooling.audits.fleet.audit_silver_fleet import (
     check_dashboard as check_dashboard_heuristic,
     check_manifest as check_manifest_heuristic,

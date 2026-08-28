@@ -31,6 +31,7 @@ import re
 import sys
 
 from tooling import discovery, paths
+from tooling._fail_loud import warn_audit_error
 
 # Inline numbered/lettered enumerations: "(1)~" / "(2) " etc. Three-or-more in
 # one paragraph (with no \item) is a run-on list. The conversion policy converts

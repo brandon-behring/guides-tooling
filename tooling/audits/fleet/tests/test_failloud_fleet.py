@@ -158,7 +158,8 @@ def test_gold_g5_unreadable_is_scaffold_only(tmp_path, capsys):
 
 def test_filter_silver_pass_keeps_errored_guide(tmp_path, monkeypatch, capsys):
     good, bad = tmp_path / "good", tmp_path / "bad"
-    good.mkdir(); bad.mkdir()
+    good.mkdir()
+    bad.mkdir()
 
     def fake_audit(gd):
         if gd.name == "bad":
@@ -184,3 +185,19 @@ def test_registry_slug_missing_on_disk_is_reported(tmp_path, monkeypatch):
 def test_registry_absent_means_nothing_missing(tmp_path, monkeypatch):
     monkeypatch.setenv("GUIDES_HOST_ROOT", str(tmp_path))
     assert audit_all_courses.registry_slugs_missing_on_disk([]) == []
+
+
+# ── audit_silver degraded paths announce themselves (the gt#33 row 8 patches) ─
+
+def test_silver_count_cards_malformed_yaml_warns(tmp_path, capsys):
+    cards = audit_silver.layout.cards_yaml(tmp_path)
+    cards.parent.mkdir(parents=True)
+    cards.write_text("cards: [unclosed\n")
+    assert audit_silver.count_cards(tmp_path) == 0
+    assert "[audit-error] audit_silver.count_cards" in capsys.readouterr().err
+
+
+def test_silver_load_los_prefix_malformed_yaml_warns(tmp_path, capsys):
+    (tmp_path / "guide_qa.yaml").write_text("los: [unclosed\n")
+    assert audit_silver.load_los_prefix(tmp_path) is None
+    assert "[audit-error] audit_silver.load_los_prefix" in capsys.readouterr().err

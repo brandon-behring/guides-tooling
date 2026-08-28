@@ -38,14 +38,11 @@ from datetime import datetime
 from pathlib import Path
 
 from tooling import discovery, layout, paths
+from tooling._fail_loud import read_text_or_warn, warn_audit_error
+from tooling.audits.fleet.audit_silver import audit_guide as audit_silver_honest_guide  # Silver gate
+from tooling.validation._latex import strip_latex_comments
 
 REPORTS_DIR = paths.host_root() / "reports"
-
-# Silver audit helpers
-from tooling._fail_loud import read_text_or_warn, warn_audit_error
-from tooling.audits.fleet.audit_source_manifest import audit_guide as audit_silver_guide
-from tooling.audits.fleet.audit_silver import audit_guide as audit_silver_honest_guide
-from tooling.validation._latex import strip_latex_comments
 
 SILVER_MAX_TODO_PCT = 30.0
 
@@ -415,11 +412,11 @@ def format_report(audits: list[dict]) -> str:
     """Generate markdown fleet audit report with Bronze + Silver columns."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     lines = [
-        f"# QA Fleet Audit Report",
-        f"",
+        "# QA Fleet Audit Report",
+        "",
         f"Generated: {now}",
         f"Courses audited: {len(audits)}",
-        f"",
+        "",
         "## Summary Table",
         "",
         f"Bronze score = {BRONZE_TOTAL}-point structural checklist "
@@ -450,17 +447,17 @@ def format_report(audits: list[dict]) -> str:
 
     lines.extend([
         "",
-        f"## Fleet Health",
-        f"",
+        "## Fleet Health",
+        "",
         f"### Bronze ({BRONZE_TOTAL}-point structural checklist)",
-        f"",
+        "",
         f"- **Fully compliant ({BRONZE_TOTAL}/{BRONZE_TOTAL})**: {fully_compliant}/{len(audits)}",
         f"- **Partial (4-{BRONZE_TOTAL - 1}/{BRONZE_TOTAL})**: "
         f"{sum(1 for a in audits if 4 <= a['green'] < BRONZE_TOTAL)}/{len(audits)}",
         f"- **Minimal (0-3/{BRONZE_TOTAL})**: {sum(1 for a in audits if a['green'] < 4)}/{len(audits)}",
-        f"",
+        "",
         f"### Silver (Bronze {BRONZE_TOTAL}/{BRONZE_TOTAL} + four content gates)",
-        f"",
+        "",
         f"- **PASS**: {silver_pass}/{len(audits)}",
         f"- **FAIL**: {silver_fail}/{len(audits)}",
         f"- **MISSING**: {silver_missing}/{len(audits)}",
