@@ -91,6 +91,7 @@ from pathlib import Path
 import yaml
 
 from tooling import discovery, layout, paths
+from tooling._fail_loud import read_text_or_warn, warn_audit_error
 
 REPORTS_DIR = paths.host_root() / "reports"
 
@@ -278,15 +279,29 @@ DEFAULT_VELOCITY = "medium"
 # ---------------------------------------------------------------------------
 
 def load_guide_qa(guide_dir: Path) -> dict:
-    """Parse guide_qa.yaml (sibling of guide/); empty dict on any error."""
+    """Parse guide_qa.yaml (sibling of guide/): ``{}`` when absent or empty, RAISES when broken.
+
+    A malformed or unreadable guide_qa.yaml used to come back as ``{}`` silently,
+    which dropped every waiver / velocity / course_map the file carried and let
+    G3 / G6 / G7 evaluate defaults as if the author had written none (gt#33 row 8).
+    The ``ValueError`` propagates to ``main()``'s per-guide handler, which records
+    the guide as ``G0: audit error`` -> class FAIL, exit 1.
+    """
     qa = guide_dir / "guide_qa.yaml"
     if not qa.exists():
         return {}
     try:
         data = yaml.safe_load(qa.read_text(errors="replace"))
-    except yaml.YAMLError:
+    except (OSError, yaml.YAMLError) as exc:
+        warn_audit_error("audit_gold.load_guide_qa", qa, exc)
+        raise ValueError(f"unreadable guide_qa.yaml: {qa}: {type(exc).__name__}: {exc}") from exc
+    if data is None:
         return {}
-    return data if isinstance(data, dict) else {}
+    if not isinstance(data, dict):
+        exc = TypeError(f"top level is {type(data).__name__}, expected a mapping")
+        warn_audit_error("audit_gold.load_guide_qa", qa, exc)
+        raise ValueError(f"malformed guide_qa.yaml: {qa}: {exc}")
+    return data
 
 
 def _is_true(value) -> bool:
@@ -419,7 +434,7 @@ class GateResult:
 class HonestReport:
     slug: str
     gates: list[GateResult] = field(default_factory=list)
-    g5_reason: str = ""  # missing | scaffold | short | thin_citations | no_ef_section | pass
+    g5_reason: str = ""  # missing | unreadable | scaffold | short | thin_citations | no_ef_section | pass
 
     @property
     def auto_gates_pass(self) -> bool:
@@ -439,15 +454,21 @@ class HonestReport:
 # Gate 1 -- retrieval coverage + checkpoint stubs.
 # ---------------------------------------------------------------------------
 
-def count_stub_checkpoint_items(chapters_dir: Path) -> tuple[int, int]:
-    """(total, stubs) where a stub is a \\item[LOS-ID] with <10 words of body."""
+def count_stub_checkpoint_items(chapters_dir: Path) -> tuple[int, int, list[str]]:
+    """(total, stubs, unreadable) where a stub is a \\item[LOS-ID] with <10 words of body.
+
+    An unreadable chapter is returned by NAME in ``unreadable`` rather than skipped:
+    a skipped file under-counts both numbers and lets ``stubs == 0`` pass the gate
+    on content it never saw (gt#33 row 8).
+    """
     total = stubs = 0
+    unreadable: list[str] = []
     if not chapters_dir.exists():
-        return 0, 0
-    for tex in chapters_dir.glob("*.tex"):
-        try:
-            content = tex.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
+        return 0, 0, []
+    for tex in sorted(chapters_dir.glob("*.tex")):
+        content = read_text_or_warn("audit_gold.G1", tex)
+        if content is None:
+            unreadable.append(tex.name)
             continue
         for match in CHECKPOINT_ITEM_RE.finditer(content):
             total += 1
@@ -460,7 +481,7 @@ def count_stub_checkpoint_items(chapters_dir: Path) -> tuple[int, int]:
             words = [w for w in stripped.split() if len(w) > 1]
             if len(words) < 10:
                 stubs += 1
-    return total, stubs
+    return total, stubs, unreadable
 
 
 def check_gate1_retrieval(slug: str, guide_dir: Path) -> GateResult:
@@ -469,7 +490,7 @@ def check_gate1_retrieval(slug: str, guide_dir: Path) -> GateResult:
     pct = float(match.group(1)) if match else 0.0
     coverage_ok = pct >= 100.0
 
-    total, stubs = count_stub_checkpoint_items(layout.chapters_dir(guide_dir))
+    total, stubs, unreadable = count_stub_checkpoint_items(layout.chapters_dir(guide_dir))
     stubs_ok = stubs == 0
 
     parts = [f"coverage {pct:.1f}%" if match else "coverage unknown"]
@@ -481,8 +502,10 @@ def check_gate1_retrieval(slug: str, guide_dir: Path) -> GateResult:
         parts.append("< 100%")
     if not stubs_ok:
         parts.append(">0 stubs (Gold requires 0)")
+    if unreadable:
+        parts.append(f"unreadable: {', '.join(unreadable)}")
     return GateResult("G1: 100% retrieval + zero checkpoint stubs",
-                      coverage_ok and stubs_ok, "; ".join(parts))
+                      coverage_ok and stubs_ok and not unreadable, "; ".join(parts))
 
 
 # ---------------------------------------------------------------------------
@@ -632,10 +655,11 @@ def check_gate4_crossref(guide_dir: Path) -> GateResult:
     chap_count = count_chapters(chapters_dir)
     total = 0
     files_with: set[str] = set()
+    unreadable: list[str] = []
     for tex in sorted(chapters_dir.glob("*.tex")):
-        try:
-            text = tex.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
+        text = read_text_or_warn("audit_gold.G4", tex)
+        if text is None:
+            unreadable.append(tex.name)  # never skip: an unread file is a FAIL, by name
             continue
         found = len(CROSSREF_RE.findall(text))
         if found:
@@ -648,14 +672,15 @@ def check_gate4_crossref(guide_dir: Path) -> GateResult:
         min_total = max(2, min(4, chap_count // 4))
         min_files = max(2, min(3, chap_count // 3))
 
-    passed = total >= min_total and len(files_with) >= min_files
+    passed = total >= min_total and len(files_with) >= min_files and not unreadable
     detail = (f"{total} crossrefs in {len(files_with)} files "
               f"(need {min_total}/{min_files}; chapters={chap_count})")
-    if not passed:
-        if total < min_total:
-            detail += f" -- total < {min_total}"
-        elif len(files_with) < min_files:
-            detail += f" -- files < {min_files}"
+    if total < min_total:
+        detail += f" -- total < {min_total}"
+    elif len(files_with) < min_files:
+        detail += f" -- files < {min_files}"
+    if unreadable:
+        detail += f" -- unreadable: {', '.join(unreadable)}"
     return GateResult("G4: size-aware crossref floor", passed, detail)
 
 
@@ -676,10 +701,11 @@ def check_gate5_fidelity(guide_dir: Path) -> tuple[GateResult, str]:
     if not audit_files:
         return GateResult(name, False, "file missing"), "missing"
     path = audit_files[-1]
-    try:
-        text = path.read_text(encoding="utf-8", errors="ignore")
-    except OSError:
-        return GateResult(name, False, "unreadable"), "missing"
+    text = read_text_or_warn("audit_gold.G5", path)
+    if text is None:
+        # "unreadable" (not "missing"): the doc exists, so the guide classifies
+        # SCAFFOLD-ONLY (exit 1), never GOLD-ELIGIBLE.
+        return GateResult(name, False, f"{path.name}: unreadable"), "unreadable"
 
     matched = [s for s in SCAFFOLD_SIGNATURES if s in text]
     if matched:
@@ -1017,18 +1043,25 @@ def audit_guide_gold(guide_dir: Path, now: datetime, build: bool = False) -> Hon
     return report
 
 
-def filter_silver_pass(guide_dirs: list[Path]) -> list[Path]:
-    """Restrict a fleet run to Silver-PASS guides (via the tooling Silver audit)."""
+def filter_silver_pass(guide_dirs: list[Path]) -> tuple[list[Path], list[tuple[Path, Exception]]]:
+    """Restrict a fleet run to Silver-PASS guides; return ``(passing, errored)``.
+
+    A guide whose Silver pre-check RAISES comes back in ``errored`` so ``main()``
+    can report it as a FAIL row (``G0: silver pre-check error``). It used to be
+    printed to stderr and dropped from the report entirely -- a guide that
+    vanished counted as neither Gold nor FAIL (gt#33 row 8).
+    """
     from tooling.audits.fleet.audit_silver import audit_guide as silver_audit
-    out = []
+    out: list[Path] = []
+    errored: list[tuple[Path, Exception]] = []
     for gd in guide_dirs:
         try:
             if silver_audit(gd).get("silver_pass"):
                 out.append(gd)
         except Exception as exc:  # noqa: BLE001 -- a broken guide must not abort the fleet
-            print(f"Warning: Silver audit error for {gd.name}: {exc!r}", file=sys.stderr)
-            continue
-    return out
+            warn_audit_error("audit_gold.filter_silver_pass", gd, exc)
+            errored.append((gd, exc))
+    return out, errored
 
 
 # ---------------------------------------------------------------------------
@@ -1124,6 +1157,7 @@ def main() -> None:
                          "(audit_gold is static without this). Slow; compiles each guide.")
     args = ap.parse_args()
 
+    errored: list[tuple[Path, Exception]] = []
     if args.guide:
         from tooling.audits.guide._guide_scope import guide_dir_for_slug
         gd = guide_dir_for_slug(args.guide)
@@ -1132,7 +1166,7 @@ def main() -> None:
             sys.exit(1)
         targets = [gd]
     else:
-        targets = filter_silver_pass(discovery.iter_guide_dirs())
+        targets, errored = filter_silver_pass(discovery.iter_guide_dirs())
 
     now = datetime.now()
     meta = git_metadata()
@@ -1141,9 +1175,15 @@ def main() -> None:
         try:
             reports.append(audit_guide_gold(gd, now, build=args.build))
         except Exception as exc:  # noqa: BLE001 -- one bad guide must not abort the fleet
+            warn_audit_error("audit_gold.audit_guide_gold", gd, exc)
             r = HonestReport(slug=gd.name)
             r.gates.append(GateResult("G0: audit error", False, f"{type(exc).__name__}: {exc}"))
             reports.append(r)
+    for gd, exc in errored:  # Silver pre-check blew up: a FAIL row, not a vanished guide
+        r = HonestReport(slug=gd.name)
+        r.gates.append(GateResult("G0: silver pre-check error", False,
+                                  f"{type(exc).__name__}: {exc}"))
+        reports.append(r)
     print_report(reports, meta, verbose=args.verbose)
 
     if args.report:

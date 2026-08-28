@@ -45,6 +45,7 @@ from typing import Any
 
 import yaml
 
+from tooling._fail_loud import warn_audit_error  # noqa: E402
 from tooling.audits.guide._guide_scope import (  # noqa: E402
     GuideInfo,
     get_all_guides,
@@ -773,8 +774,10 @@ def resolve_source_location(
                     line_no = i
                     macro_excerpt = line.strip()[:120]
                     break
-    except OSError:
-        pass
+    except OSError as exc:
+        # Location lookup only (the finding itself is already recorded); announce
+        # the unreadable source rather than degrade to (file, "", 0) silently.
+        warn_audit_error("audit_back_content.resolve_source_location", candidate, exc)
 
     return (str(rel_path), macro_excerpt, line_no)
 

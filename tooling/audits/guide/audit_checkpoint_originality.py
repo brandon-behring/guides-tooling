@@ -62,6 +62,7 @@ import sys
 from collections import defaultdict
 from dataclasses import dataclass
 
+from tooling._fail_loud import read_text_or_warn
 from tooling.audits.fleet.audit_gold import CHECKPOINT_ITEM_RE  # single source of truth
 from tooling.audits.guide._guide_scope import (
     chapter_files,
@@ -176,13 +177,18 @@ def _answer_key_offsets(content: str) -> set[int]:
     return offsets
 
 
-def _guide_items(guide_dir) -> list[tuple[str, int, str, list[str]]]:
-    """Every checkpoint PROMPT (answer-key items excluded) as (file, line, los, words)."""
+def _guide_items(guide_dir, unreadable: list[str] | None = None) -> list[tuple[str, int, str, list[str]]]:
+    """Every checkpoint PROMPT (answer-key items excluded) as (file, line, los, words).
+
+    An unreadable chapter is appended (by name) to ``unreadable`` when a list is
+    passed, and always warned on stderr -- never skipped as if it had no prompts.
+    """
     items: list[tuple[str, int, str, list[str]]] = []
     for tex in chapter_files(guide_dir):
-        try:
-            content = tex.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
+        content = read_text_or_warn("audit_checkpoint_originality", tex)
+        if content is None:
+            if unreadable is not None:
+                unreadable.append(tex.name)
             continue
         answer_keys = _answer_key_offsets(content)
         for m in CHECKPOINT_ITEM_RE.finditer(content):
@@ -203,9 +209,13 @@ class Templated:
     snippet: str
 
 
-def find_template_tails(guide_dir) -> tuple[int, list[Templated]]:
-    """Return ``(checkpoint_prompts, templated_items)`` for one guide."""
-    items = _guide_items(guide_dir)
+def find_template_tails(guide_dir, unreadable: list[str] | None = None) -> tuple[int, list[Templated]]:
+    """Return ``(checkpoint_prompts, templated_items)`` for one guide.
+
+    ``unreadable`` (optional list) collects the names of chapters that could not
+    be read; ``main()`` FAILs on them under ``--strict``.
+    """
+    items = _guide_items(guide_dir, unreadable)
 
     # Trailing SUFFIX_WORDS-word key per item (None if the prompt is shorter).
     suffixes = [
@@ -328,7 +338,8 @@ def main() -> None:
         print(f"Error: guide not found for slug: {args.guide}", file=sys.stderr)
         sys.exit(2)
 
-    total, templated = find_template_tails(guide_dir)
+    unreadable: list[str] = []
+    total, templated = find_template_tails(guide_dir, unreadable)
     pct = len(templated) / total * 100 if total else 0.0
 
     if args.json:
@@ -338,6 +349,7 @@ def main() -> None:
             "templated": len(templated),
             "pct": round(pct, 1),
             "items": [vars(t) for t in templated],
+            "unreadable": unreadable,
         }, indent=2))
     elif templated:
         # Advisory line: must NOT start with "FAIL" (audit_gold.FAIL_RE) so the
@@ -350,11 +362,14 @@ def main() -> None:
         print(f"PASS  {args.guide}: 0/{total} template-tailed checkpoints")
 
     # --strict: each templated item is an individual defect (zero-tolerance,
-    # mirroring G1 stubs==0). FAIL -> stderr; exit 1 is what audit_gold G2 keys on.
-    if args.strict and templated:
+    # mirroring G1 stubs==0), and an unreadable chapter is an audit that could not
+    # run. FAIL -> stderr; exit 1 is what audit_gold G2 keys on.
+    if args.strict and (templated or unreadable):
         for t in templated:
             print(f"FAIL  {args.guide}: checkpoint {t.los_id} template-tailed "
                   f"({t.reason}, {t.file}:{t.line})", file=sys.stderr)
+        for name in unreadable:
+            print(f"FAIL  {args.guide}: unreadable chapter {name}", file=sys.stderr)
         sys.exit(1)
 
 

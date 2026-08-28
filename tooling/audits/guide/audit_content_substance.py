@@ -48,6 +48,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from tooling._fail_loud import read_text_or_warn
 from tooling.audits.guide._guide_scope import (
     chapter_files,
     guide_dir_for_slug,
@@ -103,6 +104,7 @@ class Substance:
     clones: list[Clone]
     problems: int
     vignettes: int
+    unreadable: int = 0  # chapter files that could not be read (warned on stderr)
 
     @property
     def retrieval_artifacts(self) -> int:
@@ -122,15 +124,20 @@ class Substance:
 
 
 def measure(guide_dir: Path) -> Substance:
-    """Measure one guide's chapter bodies. Never raises on unreadable files."""
+    """Measure one guide's chapter bodies.
+
+    An unreadable chapter is counted in ``Substance.unreadable`` (and announced on
+    stderr as ``[audit-error]``), never skipped silently: both signals under-report
+    on a file they never saw, and ``--strict`` FAILs on it (gt#33 row 8).
+    """
     chapters = chapter_files(guide_dir)
     payloads: dict[str, list[str]] = defaultdict(list)
-    total_margins = problems = vignettes = 0
+    total_margins = problems = vignettes = unreadable = 0
 
     for ch in chapters:
-        try:
-            text = ch.read_text(errors="replace")
-        except OSError:
+        text = read_text_or_warn("audit_content_substance", ch, errors="replace")
+        if text is None:
+            unreadable += 1
             continue
         text = strip_latex_comments(text)  # a commented-out margin/problem is not content
         problems += len(PROBLEM_RE.findall(text))
@@ -158,6 +165,7 @@ def measure(guide_dir: Path) -> Substance:
         clones=clones,
         problems=problems,
         vignettes=vignettes,
+        unreadable=unreadable,
     )
 
 
@@ -230,6 +238,7 @@ def main() -> None:
             "dup_rate": round(s.dup_rate, 3),
             "problems": s.problems,
             "vignettes": s.vignettes,
+            "unreadable": s.unreadable,
             "margins_flagged": s.margins_flagged,
             "retrieval_flagged": s.retrieval_flagged,
             "clones": [vars(c) for c in s.clones],
@@ -249,13 +258,16 @@ def main() -> None:
         print(f"PASS  {s.slug}: {s.dup_rate * 100:.0f}% cloned margins, "
               f"{s.problems} problems, {s.vignettes} vignettes")
 
-    if args.strict and s.flagged:
+    if args.strict and (s.flagged or s.unreadable):
         if s.margins_flagged:
             print(f"FAIL  {s.slug}: margin clone rate {s.dup_rate * 100:.0f}% "
                   f"> {MAX_DUP_RATE:.0%}", file=sys.stderr)
         if s.retrieval_flagged:
             print(f"FAIL  {s.slug}: 0 problems and 0 vignettes across "
                   f"{s.chapters} chapters", file=sys.stderr)
+        if s.unreadable:
+            print(f"FAIL  {s.slug}: {s.unreadable} unreadable chapter file(s) "
+                  "(see [audit-error] lines)", file=sys.stderr)
         sys.exit(1)
 
 

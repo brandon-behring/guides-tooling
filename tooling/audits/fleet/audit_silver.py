@@ -307,7 +307,8 @@ def silver_sweep_touched_guides() -> set[str]:
              "--name-only", "--pretty=format:"],
             capture_output=True, text=True, check=True,
         )
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        warn_audit_error("audit_silver.silver_sweep_touched_guides", paths.host_root(), exc)
         return set()
     touched: set[str] = set()
     for line in result.stdout.splitlines():
@@ -331,7 +332,8 @@ def is_short_dlai(guide: Path) -> bool:
         return False
     try:
         return float(match.group(1)) < DLAI_SHORT_HOURS_THRESHOLD
-    except ValueError:
+    except ValueError as exc:
+        warn_audit_error("audit_silver.is_short_dlai", claude_md, exc)
         return False
 
 
@@ -430,7 +432,8 @@ def count_cards(guide: Path) -> int:
         return 0
     try:
         data = yaml.safe_load(cards_yaml.read_text(errors="replace"))
-    except yaml.YAMLError:
+    except (OSError, yaml.YAMLError) as exc:
+        warn_audit_error("audit_silver.count_cards", cards_yaml, exc)
         return 0
     if not isinstance(data, dict):
         return 0
@@ -474,7 +477,8 @@ def load_los_prefix(guide: Path) -> str | None:
         return None
     try:
         data = yaml.safe_load(qa.read_text(errors="replace"))
-    except yaml.YAMLError:
+    except (OSError, yaml.YAMLError) as exc:
+        warn_audit_error("audit_silver.load_los_prefix", qa, exc)
         return None
     if not isinstance(data, dict):
         return None
