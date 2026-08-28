@@ -173,6 +173,19 @@ The seven gates:
     reference, and a verdict flag (*well-supported* / *contested* / *dated*). F is
     waiverable — for guides whose field has no live debates — via
     `gold_exceptions.debates_waiver: "true"` + justification.
+  - **Per-item citation rule** (gt#33 row 7; **blocking** as of 2026-08-28 —
+    the knob is `G7_CITES_STRICT` in `audit_gold.py`, `False` = the same
+    counts print as advisory): every E currency item and every F Position
+    must carry at least one resolvable citation marker (a `\cite`-family
+    command, an arXiv id, a DOI, or an http(s) permalink — `F_CITE_RES`,
+    counted on comment-stripped text). Pinned span definitions: an **E item**
+    is a `\subsection`/`\paragraph` block (an `\item` when the appendix has no
+    subsections) that appears *before* the "What Still Holds" `\section`; an
+    **F Position** runs from `\textbf{Position X …}` to the next Position or
+    the debate's "where the book sits" anchor, so a citation in the verdict
+    paragraph cannot credit a Position. The G7 detail reports
+    `N/M items uncited` / `N/M Positions uncited`. The file-wide F floor
+    (`max(6, 2 × debates)`) still applies.
 
   *Slot-collision note:* `manning_llm_from_scratch` currently uses the `E_` slot
   for an `E_code_snippets.tex` appendix; it must be renamed/normalized to the keyed

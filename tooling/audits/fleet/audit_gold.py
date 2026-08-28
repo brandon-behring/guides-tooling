@@ -49,11 +49,12 @@ Known limitations (documented T2 scope -- see the PR thread):
 - **G3 is a built-artifact check, not a live ``make decks`` build.** Run
   ``make decks`` / ``make decks-all`` before auditing; a clean checkout with no
   built ``.apkg`` fails "decks/ missing". Gold is locally-verified, not CI-wired.
-- **G7's E/F checks are structural** (date stamp, item/debate counts, the
-  per-debate anchor, the velocity SLA) -- they do not semantically verify that
-  each currency item names a concrete moving surface or that each debate carries
-  dual-sourced positions A/B. Deeper validation tightens during the Track-G
-  promotion waves.
+- **G7's E/F checks are structural + per-item citation presence** (date stamp,
+  item/debate counts, the per-debate anchor, the velocity SLA; and, since gt#33
+  row 7, >=1 resolvable citation marker per E currency item and per F Position,
+  gated by ``G7_CITES_STRICT``). They still do not semantically verify that a
+  cited source supports the claim beside it -- that is the G5 "E/F source
+  verification" section's job.
 - **The MEAP version<->date "at-or-after" tie is deferred to T4** (the
   MEAP-freshness checker, which carries clean version+date data); here G7 only
   checks that a pinned ``vN`` version is named in E.
@@ -189,6 +190,13 @@ G7_MIN_DEBATES = 3
 # Enforce max(G7_F_CITE_FLOOR, 2 x debates) resolvable citation markers across the
 # (comment-stripped) appendix, so verdict flags alone cannot pass an uncited F.
 G7_F_CITE_FLOOR = 6
+# Per-item citation checks (gt#33 row 7; owner-ruled BLOCKING on landing, 2026-08-28).
+# True: an uncited E currency item or an uncited F Position fails G7. False: the
+# same counts are computed and shown in the G7 detail as advisory but gate nothing.
+# This constant is the policy knob -- flip it here, do not add a CLI flag.
+G7_CITES_STRICT = True
+E_ITEM_MIN_CITES = 1
+F_POSITION_MIN_CITES = 1
 # A stub E: "No significant {breaking changes / best-practice shifts / ...}
 # identified yet" and the like. Substantive change items still naming a surface
 # do not match because of the trailing "yet".
@@ -216,6 +224,18 @@ SUBSECTION_RE = re.compile(r"^\s*\\(?:subsection|paragraph)\*?\{", re.MULTILINE)
 # sits..." once, which would otherwise inflate the debate count by 1.
 WHERE_BOOK_RE = re.compile(r"(?i)\\textbf\{[^}]*?where\s+(?:this|the)\s+book\s+sits")
 VERDICT_RE = re.compile(r"(?i)(well[-\s]supported|contested|dated)")
+# G7 per-item spans -- pinned definitions (tier_model.md §G7, gt#33 row 7):
+#   E item     = a \subsection/\paragraph block (an \item when the appendix has no
+#                subsections) that appears BEFORE the "what still holds" \section; the
+#                source-stability notes after it are not currency items.
+#   F Position = from \textbf{Position X ...} to the next Position marker or the
+#                debate's "where the book sits" anchor, whichever comes first -- a
+#                citation in the verdict paragraph cannot credit a Position.
+WHAT_HOLDS_SECTION_RE = re.compile(
+    r"^\s*\\section\*?\{[^}]*(?:still\s+hold|what\s+still|source[-\s]stability|stability)",
+    re.MULTILINE | re.IGNORECASE,
+)
+F_POSITION_RE = re.compile(r"\\textbf\{\s*Position\s+[A-Z]\b")
 # Resolvable citation markers (same family as the epilogue gate): a biblatex cite
 # command, an arXiv id, a DOI, or an http(s) permalink. Counted on comment-stripped
 # text so a fresh scaffold's commented example-cites do not satisfy the floor.
@@ -746,14 +766,62 @@ def _count_debates(text: str) -> int:
     return len(WHERE_BOOK_RE.findall(text))
 
 
-def _check_e_appendix(guide_dir: Path, qa: dict, now: datetime) -> list[str]:
-    """Return a list of E-appendix failure reasons; empty == pass."""
+def _cite_count(text: str) -> int:
+    """Number of resolvable citation markers (``F_CITE_RES``) in *text*."""
+    return sum(len(rx.findall(text)) for rx in F_CITE_RES)
+
+
+def _e_item_spans(live: str) -> list[str]:
+    """The text of each E currency item, in order (pass comment-stripped text).
+
+    Items are the ``\\subsection``/``\\paragraph`` blocks before the "what still
+    holds" section; an appendix with no subsections falls back to its ``\\item``s.
+    """
+    cut = WHAT_HOLDS_SECTION_RE.search(live)
+    body = live[: cut.start()] if cut else live
+    marks = [m.start() for m in SUBSECTION_RE.finditer(body)]
+    if not marks:
+        marks = [m.start() for m in ITEM_RE.finditer(body)]
+    return [body[a:b] for a, b in zip(marks, marks[1:] + [len(body)])]
+
+
+def _f_position_spans(live: str) -> list[str]:
+    """The text of each F Position block, in order (pass comment-stripped text).
+
+    A block runs from its ``\\textbf{Position X`` marker to the next Position marker
+    or the debate's "where the book sits" anchor, whichever comes first.
+    """
+    starts = [m.start() for m in F_POSITION_RE.finditer(live)]
+    anchors = [m.start() for m in WHERE_BOOK_RE.finditer(live)]
+    spans: list[str] = []
+    for i, a in enumerate(starts):
+        nxt = starts[i + 1] if i + 1 < len(starts) else len(live)
+        stop = next((e for e in anchors if e > a), len(live))
+        spans.append(live[a:min(nxt, stop)])
+    return spans
+
+
+def _cite_verdict(uncited: int, total: int, noun: str) -> tuple[str | None, str | None]:
+    """``(issue, note)`` for an uncited count -- exactly one is set when ``uncited > 0``.
+
+    Under ``G7_CITES_STRICT`` the count is a gate failure (issue); otherwise it is an
+    advisory note carried in the G7 detail so the debt stays visible on every run.
+    """
+    if not total or not uncited:
+        return None, None
+    msg = f"{uncited}/{total} {noun} uncited"
+    return (msg, None) if G7_CITES_STRICT else (None, msg + ", advisory")
+
+
+def _check_e_appendix(guide_dir: Path, qa: dict, now: datetime) -> tuple[list[str], list[str]]:
+    """Return ``(failure reasons, advisory notes)`` for the E appendix; no reasons == pass."""
     path = layout.appendices_dir(guide_dir) / E_FILENAME
     if not path.exists():
-        return [f"{E_FILENAME} missing"]
+        return [f"{E_FILENAME} missing"], []
     text = path.read_text(errors="replace")
     body = strip_template_lines(text)
     issues: list[str] = []
+    notes: list[str] = []
 
     currency_items = _count_currency_items(body)
     if E_STUB_RE.search(body) and currency_items < G7_MIN_CURRENCY_ITEMS:
@@ -776,6 +844,16 @@ def _check_e_appendix(guide_dir: Path, qa: dict, now: datetime) -> list[str]:
     if not WHAT_HOLDS_RE.search(body):
         issues.append("no 'what still holds' section")
 
+    # Per-item citation presence (gt#33 row 7): every currency item span must carry
+    # >= E_ITEM_MIN_CITES resolvable markers, counted on comment-stripped text.
+    spans = _e_item_spans(_strip_tex_comments(body))
+    uncited = sum(1 for s in spans if _cite_count(s) < E_ITEM_MIN_CITES)
+    issue, note = _cite_verdict(uncited, len(spans), "items")
+    if issue:
+        issues.append(issue)
+    if note:
+        notes.append(note)
+
     mv = meap_version(guide_dir)
     if mv is not None:
         ver = mv.split()[0] if mv.split() else ""  # e.g. "v4" from "v4 (CloudFront ...)"
@@ -788,18 +866,20 @@ def _check_e_appendix(guide_dir: Path, qa: dict, now: datetime) -> list[str]:
         if re.fullmatch(r"v\d+", ver, re.IGNORECASE):
             if not re.search(rf"(?i)\b{re.escape(ver)}\b", body):
                 issues.append(f"E does not name MEAP version ({ver})")
-    return issues
+    return issues, notes
 
 
-def _check_f_appendix(guide_dir: Path, qa: dict) -> list[str]:
+def _check_f_appendix(guide_dir: Path, qa: dict) -> tuple[list[str], list[str]]:
+    """Return ``(failure reasons, advisory notes)`` for the F appendix; no reasons == pass."""
     exc = get_gold_exceptions(qa)
     if _is_true(exc.get("debates_waiver")) and str(exc.get("debates_waiver_justification", "")).strip():
-        return []  # waived
+        return [], []  # waived
     path = layout.appendices_dir(guide_dir) / F_FILENAME
     if not path.exists():
-        return [f"{F_FILENAME} missing"]
+        return [f"{F_FILENAME} missing"], []
     text = strip_template_lines(path.read_text(errors="replace"))
     issues: list[str] = []
+    notes: list[str] = []
     debates = _count_debates(text)
     if debates < G7_MIN_DEBATES:
         issues.append(f"<{G7_MIN_DEBATES} debates ({debates})")
@@ -807,27 +887,41 @@ def _check_f_appendix(guide_dir: Path, qa: dict) -> list[str]:
         issues.append("missing verdict flags (well-supported/contested/dated)")
     # Cited-Contested: every debate's Positions must carry resolvable citations.
     live = _strip_tex_comments(text)
-    cites = sum(len(rx.findall(live)) for rx in F_CITE_RES)
+    cites = _cite_count(live)
     cite_floor = max(G7_F_CITE_FLOOR, 2 * debates)
     if cites < cite_floor:
         issues.append(f"<{cite_floor} resolvable citations ({cites})")
-    return issues
+    # Per-Position floor (gt#33 row 7): the file-wide floor above lets one
+    # heavily-cited debate carry three uncited ones; each Position block must
+    # carry >= F_POSITION_MIN_CITES markers of its own.
+    positions = _f_position_spans(live)
+    uncited = sum(1 for s in positions if _cite_count(s) < F_POSITION_MIN_CITES)
+    issue, note = _cite_verdict(uncited, len(positions), "Positions")
+    if issue:
+        issues.append(issue)
+    if note:
+        notes.append(note)
+    return issues, notes
 
 
 def check_gate7_currency(guide_dir: Path, qa: dict, now: datetime) -> GateResult:
-    e_issues = _check_e_appendix(guide_dir, qa, now)
-    f_issues = _check_f_appendix(guide_dir, qa)
+    e_issues, e_notes = _check_e_appendix(guide_dir, qa, now)
+    f_issues, f_notes = _check_f_appendix(guide_dir, qa)
     exc = get_gold_exceptions(qa)
     f_waived = _is_true(exc.get("debates_waiver")) and str(exc.get("debates_waiver_justification", "")).strip()
+    f_ok_word = "waived" if f_waived else "ok"
 
     passed = not e_issues and not f_issues
-    if passed:
-        detail = "E ok; F " + ("waived" if f_waived else "ok")
+    if passed and not e_notes and not f_notes:
+        detail = f"E ok; F {f_ok_word}"
     else:
-        parts = []
-        parts.append("E: " + ("; ".join(e_issues) if e_issues else "ok"))
-        parts.append("F: " + ("; ".join(f_issues) if f_issues else ("waived" if f_waived else "ok")))
-        detail = " | ".join(parts)
+        def _part(label: str, issues: list[str], notes: list[str], ok_word: str) -> str:
+            core = "; ".join(issues) if issues else ok_word
+            if notes:
+                core += " (" + "; ".join(notes) + ")"
+            return f"{label}: {core}"
+        detail = " | ".join([_part("E", e_issues, e_notes, "ok"),
+                             _part("F", f_issues, f_notes, f_ok_word)])
     return GateResult("G7: currency appendices E/F", passed, detail)
 
 
