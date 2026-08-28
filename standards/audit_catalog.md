@@ -31,7 +31,7 @@ added — do not re-wire it.) The eleven names here must match the G2 list in
 | Script | Measures |
 |--------|----------|
 | `audit_card_quality.py` | Back-length distribution; broken LaTeX; ID collisions; type distribution; LOS traceability |
-| `audit_back_content.py` | Card-back substance: empty / near-empty backs, front↔back duplication (Jaccard ≥0.85), stub answers, structure-less backs. Grades on **CRITICAL / HIGH / MEDIUM / INFO** severities; Gold G2 gates on **zero CRITICAL + zero HIGH** (MEDIUM/INFO advisory). The one severity-graded audit — the other ten are binary `FAIL`/pass. **Runner contract (T2):** it emits severity-tagged findings, **not** `FAIL` lines, so the Gold runner must gate on parsed CRITICAL/HIGH counts (or a `--fail-on high` exit code) — `FAIL_RE` alone would silently always-pass. Its CLI flag is `--guides` (not `--guide`). |
+| `audit_back_content.py` | Card-back substance: empty / near-empty backs, front↔back duplication (Jaccard ≥0.85), stub answers, structure-less backs, and (rule **M5**, gt#33) the card extractor's boilerplate placeholder back ("Self-check from: … Answer from memory …") — MEDIUM/advisory on landing (3631 cards in 38 guides on 2026-08-28), to be promoted to HIGH after the answer-key sweep. Grades on **CRITICAL / HIGH / MEDIUM / INFO** severities; Gold G2 gates on **zero CRITICAL + zero HIGH** (MEDIUM/INFO advisory). The one severity-graded audit — the other ten are binary `FAIL`/pass. **Runner contract (T2):** it emits severity-tagged findings, **not** `FAIL` lines, so the Gold runner must gate on parsed CRITICAL/HIGH counts (or a `--fail-on high` exit code) — `FAIL_RE` alone would silently always-pass. Its CLI flag is `--guides` (not `--guide`). |
 | `audit_card_presentation.py` | LaTeX rendering correctness; MathJax conversion (`$...$` → `\(...\)`); formatting (run-on lists, inline headers) |
 | `audit_atomicity.py` | Card granularity (atomic / borderline / compound); emits `FAIL <guide>: N compound card(s)` when any compound cards present, which Gold G2 catches via `FAIL_RE`. **Gold-blocking** as of 2026-04-24 per `tier_model.md` §Gold. Use `--check` for an exit-code signal in CI. |
 | `audit_term_consistency.py` | Duplicate or conflicting term definitions across chapters (e.g., "CUPED" defined twice with different wording) |
@@ -104,9 +104,15 @@ make audit-all                                       # or:
 python3 -m tooling.audits.fleet.audit_all_courses --summary
 ```
 
-- Discovers courses by walking the repo for `guide_qa.yaml` files (81 today).
-- Runs the 9-point structural checklist (see [`tier_model.md`](tier_model.md)
-  §Bronze).
+- Discovers courses by walking the repo for `guide_qa.yaml` files (83 today).
+  `tooling/discovery.py` never walks `reports/`, `scripts/`, `docs/` or the
+  other non-guide trees, accepts a nested guide only under a topic dir the
+  registry (`guides.yml`) declares, and **raises `DuplicateGuideSlug`** when
+  two dirs share a basename (gt#33 / r2 DRIVER-1: rsync scratch copies under
+  `reports/_scratch/` used to shadow the real guides silently). `--strict` also
+  exits 1 when a registered slug has no dir on disk.
+- Runs the 10-point structural checklist (see [`tier_model.md`](tier_model.md)
+  §Bronze; check 10 = stub-free includes).
 - Writes a fresh `reports/qa_fleet_audit_<YYYYMMDD>.md`.
 - Per the lifecycle policy ([`document_lifecycle.md`](document_lifecycle.md)),
   only the most recent fleet audit is kept; older ones should be `git rm`'d

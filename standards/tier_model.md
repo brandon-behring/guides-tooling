@@ -9,7 +9,8 @@ binary "gold-standard or not" framing of the original single-spec era.
 
 A guide is Bronze when `make audit-all` (i.e.
 `python -m tooling.audits.fleet.audit_all_courses --summary`) shows it at
-**9/9 GREEN** on the 9-point structural checklist:
+**10/10 GREEN** on the 10-point structural checklist (`BRONZE_CHECKS` in
+`audit_all_courses.py`; `BRONZE_TOTAL` is the one denominator):
 
 1. `guide_qa.yaml` present and valid.
 2. Validation modules resolvable via `tooling.validation.{check_refs,check_duplicates,extract_los,check_latex_warnings}`.
@@ -22,9 +23,18 @@ A guide is Bronze when `make audit-all` (i.e.
    in [`learning_outcomes.md`](learning_outcomes.md) (or are a documented subset).
 9. No hardcoded paths in audit scripts or Makefile (resolve via the
    `tooling.*` package).
+10. **Stub-free includes** (gt#33, 2026-08-28): every `\input`/`\include`
+    target named in `guide/main.tex` (comment-stripped, resolved relative to
+    `guide/`) exists, is readable, and has a body — i.e. after dropping
+    `\chapter`/`\section`/`\label` lines and comments, at least one content
+    line remains and its first content line does not begin with
+    `TODO`/`TBD`/`FIXME`/`PLACEHOLDER`. Commented-out includes (the gm#93
+    un-input form) are ignored. This is the enforcement half of the 87
+    `TODO`-body appendix chapters the 2026-08-27 gold-wave review found
+    rendering into delivered PDFs while every gate stayed green.
 
-Live as of 2026-06-09: **81 / 81** active guides (across 12 topics; 45
-published, 36 MEAP) are Bronze 9/9.
+Live as of 2026-08-28: **83 / 83** active guides (across 12 topics) are
+Bronze 10/10 (this machine, host `dd141cfc` + the gt#33 tooling branch).
 
 ### Silver — verified and contextualized
 
@@ -68,7 +78,7 @@ Audited by `tooling.audits.fleet.audit_silver`, which is the authoritative
 Silver roster. `tooling.audits.fleet.audit_silver_fleet` remains as a fast
 heuristic calibration signal but should not be quoted as the roster.
 `tooling.audits.fleet.audit_all_courses` agrees with the authoritative
-auditor (its `check_silver` requires Bronze 9/9 and delegates the four
+auditor (its `check_silver` requires Bronze 10/10 and delegates the four
 content gates to it).
 
 **Informational columns** surfaced by `tooling.audits.fleet.audit_silver`
@@ -163,6 +173,19 @@ The seven gates:
     reference, and a verdict flag (*well-supported* / *contested* / *dated*). F is
     waiverable — for guides whose field has no live debates — via
     `gold_exceptions.debates_waiver: "true"` + justification.
+  - **Per-item citation rule** (gt#33 row 7; **blocking** as of 2026-08-28 —
+    the knob is `G7_CITES_STRICT` in `audit_gold.py`, `False` = the same
+    counts print as advisory): every E currency item and every F Position
+    must carry at least one resolvable citation marker (a `\cite`-family
+    command, an arXiv id, a DOI, or an http(s) permalink — `F_CITE_RES`,
+    counted on comment-stripped text). Pinned span definitions: an **E item**
+    is a `\subsection`/`\paragraph` block (an `\item` when the appendix has no
+    subsections) that appears *before* the "What Still Holds" `\section`; an
+    **F Position** runs from `\textbf{Position X …}` to the next Position or
+    the debate's "where the book sits" anchor, so a citation in the verdict
+    paragraph cannot credit a Position. The G7 detail reports
+    `N/M items uncited` / `N/M Positions uncited`. The file-wide F floor
+    (`max(6, 2 × debates)`) still applies.
 
   *Slot-collision note:* `manning_llm_from_scratch` currently uses the `E_` slot
   for an `E_code_snippets.tex` appendix; it must be renamed/normalized to the keyed

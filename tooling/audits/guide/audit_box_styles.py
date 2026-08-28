@@ -32,6 +32,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from tooling import discovery, paths
+from tooling._fail_loud import warn_audit_error
 from tooling.audits.guide._guide_scope import guide_dir_for_slug
 
 _NAME_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9]*")
@@ -87,10 +88,19 @@ def _split_top_commas(s: str) -> list[str]:
     return parts
 
 
-def _read(p: Path) -> str:
+def _read(p: Path, unreadable: list[str] | None = None) -> str:
+    """Comment-stripped text of *p*; ``""`` when absent (an optional sty is a
+    legitimate no-op) -- but a file that EXISTS and cannot be read is announced on
+    stderr and appended to ``unreadable``, never silently treated as empty (gt#33
+    row 8: an unread chapter used to report "no used styles" and PASS)."""
     try:
         return _COMMENT_RE.sub("", p.read_text(encoding="utf-8", errors="ignore"))
-    except OSError:
+    except FileNotFoundError:
+        return ""
+    except OSError as exc:
+        warn_audit_error("audit_box_styles", p, exc)
+        if unreadable is not None:
+            unreadable.append(p.name)
         return ""
 
 
@@ -120,7 +130,7 @@ def _defined_styles(guide_dir: Path) -> set[str]:
     return set(_shared_styles()) | _styles_in(_read(guide_dir / "guide" / "notebook-extensions.sty"))
 
 
-def _used_styles(guide_dir: Path) -> set[str]:
+def _used_styles(guide_dir: Path, unreadable: list[str] | None = None) -> set[str]:
     """Bare custom-style tokens used in any \\begin{tcolorbox}[...] of the guide.
 
     Bracket-aware: the option list is read to the ``]`` that matches at brace
@@ -128,7 +138,7 @@ def _used_styles(guide_dir: Path) -> set[str]:
     used: set[str] = set()
     g = guide_dir / "guide"
     for tex in list(g.glob("chapters/*.tex")) + list(g.glob("appendices/*.tex")):
-        text = _read(tex)
+        text = _read(tex, unreadable)
         for m in _BEGIN_RE.finditer(text):
             end = _matched_group(text, m.end() - 1, "[", "]")   # the '[' of [...]
             opts = text[m.end():end - 1]
@@ -139,9 +149,12 @@ def _used_styles(guide_dir: Path) -> set[str]:
     return used
 
 
-def find_undefined_box_styles(guide_dir: Path) -> list[str]:
-    """Custom styles the guide USES (and that exist somewhere) but does not DEFINE."""
-    return sorted((_used_styles(guide_dir) & _universe()) - _defined_styles(guide_dir))
+def find_undefined_box_styles(guide_dir: Path, unreadable: list[str] | None = None) -> list[str]:
+    """Custom styles the guide USES (and that exist somewhere) but does not DEFINE.
+
+    Pass a list as ``unreadable`` to collect the names of chapter/appendix files that
+    could not be read (each is also warned on stderr)."""
+    return sorted((_used_styles(guide_dir, unreadable) & _universe()) - _defined_styles(guide_dir))
 
 
 def main() -> None:
@@ -158,18 +171,23 @@ def main() -> None:
         print(f"Error: guide not found for slug: {args.guide}", file=sys.stderr)
         sys.exit(2)
 
-    undefined = find_undefined_box_styles(guide_dir)
+    unreadable: list[str] = []
+    undefined = find_undefined_box_styles(guide_dir, unreadable)
 
     if args.json:
-        print(json.dumps({"slug": args.guide, "undefined_styles": undefined}, indent=2))
+        print(json.dumps({"slug": args.guide, "undefined_styles": undefined,
+                          "unreadable": unreadable}, indent=2))
     elif undefined:
         print(f"{args.guide}: {len(undefined)} undefined tcolorbox style(s): {', '.join(undefined)}")
     else:
         print(f"PASS  {args.guide}: all used tcolorbox styles are defined")
 
-    if args.strict and undefined:
-        print(f"FAIL  {args.guide}: tcolorbox style(s) used but not defined "
-              f"(add to notebook-extensions.sty): {', '.join(undefined)}", file=sys.stderr)
+    if args.strict and (undefined or unreadable):
+        if undefined:
+            print(f"FAIL  {args.guide}: tcolorbox style(s) used but not defined "
+                  f"(add to notebook-extensions.sty): {', '.join(undefined)}", file=sys.stderr)
+        for name in unreadable:
+            print(f"FAIL  {args.guide}: unreadable file {name}", file=sys.stderr)
         sys.exit(1)
 
 

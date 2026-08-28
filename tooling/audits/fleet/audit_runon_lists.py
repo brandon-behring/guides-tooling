@@ -31,6 +31,7 @@ import re
 import sys
 
 from tooling import discovery, paths
+from tooling._fail_loud import warn_audit_error
 
 # Inline numbered/lettered enumerations: "(1)~" / "(2) " etc. Three-or-more in
 # one paragraph (with no \item) is a run-on list. The conversion policy converts
@@ -157,7 +158,8 @@ def main() -> int:
         for f in guide_tex_files(g):
             try:
                 total += scan_text(f.read_text(errors="replace"))
-            except OSError:
+            except OSError as exc:
+                warn_audit_error("audit_runon_lists", f, exc)
                 continue
         rows.append((g.name, total))
     rows.sort(key=lambda r: (-r[1], r[0]))

@@ -58,16 +58,19 @@ VOLUME_PREFIXES = {
 }
 
 
+# Pattern: \los{ID}{level}{statement} -- the statement may carry ONE level of nested
+# braces (\texttt{...}). Module-level so other audits (checkpoint_originality signal C)
+# read LOS text through the same definition.
+LOS_RE = re.compile(r'\\los\{([^}]+)\}\{([^}]+)\}\{([^}]+(?:\{[^}]*\}[^}]*)*)\}', re.DOTALL)
+
+
 def extract_los_from_file(filepath: Path) -> list[dict[str, Any]]:
     """Extract all LOS definitions from a LaTeX file."""
     # Strip LaTeX comments so a commented-out \los{...} is not counted (guides-tooling#4 p15).
     content = strip_latex_comments(filepath.read_text(encoding='utf-8'))
     los_list = []
 
-    # Pattern: \los{ID}{level}{statement}
-    pattern = r'\\los\{([^}]+)\}\{([^}]+)\}\{([^}]+(?:\{[^}]*\}[^}]*)*)\}'
-
-    for match in re.finditer(pattern, content, re.DOTALL):
+    for match in LOS_RE.finditer(content):
         los_id = match.group(1).strip()
         level = match.group(2).strip()
         statement = match.group(3).strip()

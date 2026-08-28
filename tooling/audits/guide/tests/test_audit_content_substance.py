@@ -91,3 +91,55 @@ def test_guide_with_no_margins_is_not_divided_by_zero(tmp_path):
     assert s.dup_rate == 0.0
     assert not s.margins_flagged
     assert not s.retrieval_flagged
+
+
+# ── gt#33 row 9: brace-balanced margin scanner ───────────────────────────────
+
+def test_wrapped_margin_counted_and_normalized(tmp_path):
+    # The same note, wrapped differently in two chapters: the old end-of-line-anchored
+    # regex saw NEITHER (fleet-wide 1823 of 8215 margins were invisible); both must
+    # count, and whitespace normalisation must make them ONE clone.
+    gd = _make_guide(tmp_path, {
+        "01_m1_a.tex": (
+            "\\interviewmargin{``What types of tools does an agent need?'' ---\n"
+            "information, action, and domain-specialized.}\n"
+        ),
+        "02_m2_b.tex": (
+            "\\interviewmargin{``What types of tools does an agent need?''\n"
+            "--- information, action,\n"
+            "and domain-specialized.}\n"
+        ),
+    })
+    s = measure(gd)
+    assert s.margins == 2
+    assert s.duplicated == 2
+    assert s.clones[0].count == 2
+
+
+def test_nested_brace_margin_not_truncated(tmp_path):
+    # A payload with a nested group must be captured whole: two notes that differ
+    # only AFTER the nested \textbf{} are distinct, not clones of a truncated prefix.
+    gd = _make_guide(tmp_path, {
+        "01_m1_a.tex": r"\patternmargin{Tool taxonomy: \textbf{information} (temporal gap).}",
+        "02_m2_b.tex": r"\patternmargin{Tool taxonomy: \textbf{information} (functional gap).}",
+    })
+    s = measure(gd)
+    assert s.margins == 2
+    assert s.duplicated == 0
+    assert s.clones == []
+
+
+def test_two_margins_one_line_both_counted(tmp_path):
+    gd = _make_guide(tmp_path, {
+        "01_m1_a.tex": r"\formulamargin{$a^2$} text \warningmargin{b} more",
+    })
+    s = measure(gd)
+    assert s.margins == 2
+
+
+def test_commented_out_margin_not_counted(tmp_path):
+    gd = _make_guide(tmp_path, {
+        "01_m1_a.tex": "% \\warningmargin{draft note, commented out}\n\\warningmargin{live note}\n",
+    })
+    s = measure(gd)
+    assert s.margins == 1

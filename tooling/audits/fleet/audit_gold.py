@@ -49,11 +49,12 @@ Known limitations (documented T2 scope -- see the PR thread):
 - **G3 is a built-artifact check, not a live ``make decks`` build.** Run
   ``make decks`` / ``make decks-all`` before auditing; a clean checkout with no
   built ``.apkg`` fails "decks/ missing". Gold is locally-verified, not CI-wired.
-- **G7's E/F checks are structural** (date stamp, item/debate counts, the
-  per-debate anchor, the velocity SLA) -- they do not semantically verify that
-  each currency item names a concrete moving surface or that each debate carries
-  dual-sourced positions A/B. Deeper validation tightens during the Track-G
-  promotion waves.
+- **G7's E/F checks are structural + per-item citation presence** (date stamp,
+  item/debate counts, the per-debate anchor, the velocity SLA; and, since gt#33
+  row 7, >=1 resolvable citation marker per E currency item and per F Position,
+  gated by ``G7_CITES_STRICT``). They still do not semantically verify that a
+  cited source supports the claim beside it -- that is the G5 "E/F source
+  verification" section's job.
 - **The MEAP version<->date "at-or-after" tie is deferred to T4** (the
   MEAP-freshness checker, which carries clean version+date data); here G7 only
   checks that a pinned ``vN`` version is named in E.
@@ -90,6 +91,7 @@ from pathlib import Path
 import yaml
 
 from tooling import discovery, layout, paths
+from tooling._fail_loud import read_text_or_warn, warn_audit_error
 
 REPORTS_DIR = paths.host_root() / "reports"
 
@@ -111,11 +113,12 @@ REPORTS_DIR = paths.host_root() / "reports"
 # tooling toggle. Flip these two to ["--strict"] once that pass lands. They are
 # still invoked (flagless) so a future leading "FAIL" line is caught, not skipped.
 #
-# audit_checkpoint_originality is likewise registered FLAGLESS during the
-# warning-first rollout of the template-tailing detector: in advisory mode it
-# reports but never emits a "FAIL" line, so it gates nothing (Gold count is
-# unchanged). Flip it to ["--strict"] -- and relabel G2 "14-audit" -- once the
-# checkpoint sweep clears the fleet to zero template-tailed items.
+# audit_checkpoint_originality and audit_content_substance are registered FLAGLESS
+# during the warning-first rollout of their detectors: in advisory mode each
+# reports but never emits a "FAIL" line, so neither gates anything (Gold count is
+# unchanged). Flip each to ["--strict"] -- and relabel G2 (14-/15-audit) -- once
+# its sweep clears the fleet (originality: zero template-tailed / verbatim-LOS
+# items; content_substance: margin-clone rate under MAX_DUP_RATE fleet-wide).
 GUIDE_AUDITS: dict[str, list[str]] = {
     "audit_atomicity": ["--check"],
     "audit_box_styles": ["--strict"],       # gated: every used tcolorbox style is defined
@@ -126,6 +129,8 @@ GUIDE_AUDITS: dict[str, list[str]] = {
                                             # checkpoints; flip to ["--strict"] post-sweep
     "audit_content_freshness": ["--strict"],
     "audit_content_quality": ["--strict"],
+    "audit_content_substance": [],          # advisory (warning-first): cloned margins /
+                                            # no retrieval; flip to ["--strict"] post-sweep
     "audit_crossref_quality": [],           # exits 1 on broken refs
     "audit_margin_quality": ["--strict-templates"],  # gated: 0 content-free templated
                                             # margins (density/quality --strict still T2b)
@@ -186,6 +191,13 @@ G7_MIN_DEBATES = 3
 # Enforce max(G7_F_CITE_FLOOR, 2 x debates) resolvable citation markers across the
 # (comment-stripped) appendix, so verdict flags alone cannot pass an uncited F.
 G7_F_CITE_FLOOR = 6
+# Per-item citation checks (gt#33 row 7; owner-ruled BLOCKING on landing, 2026-08-28).
+# True: an uncited E currency item or an uncited F Position fails G7. False: the
+# same counts are computed and shown in the G7 detail as advisory but gate nothing.
+# This constant is the policy knob -- flip it here, do not add a CLI flag.
+G7_CITES_STRICT = True
+E_ITEM_MIN_CITES = 1
+F_POSITION_MIN_CITES = 1
 # A stub E: "No significant {breaking changes / best-practice shifts / ...}
 # identified yet" and the like. Substantive change items still naming a surface
 # do not match because of the trailing "yet".
@@ -213,6 +225,18 @@ SUBSECTION_RE = re.compile(r"^\s*\\(?:subsection|paragraph)\*?\{", re.MULTILINE)
 # sits..." once, which would otherwise inflate the debate count by 1.
 WHERE_BOOK_RE = re.compile(r"(?i)\\textbf\{[^}]*?where\s+(?:this|the)\s+book\s+sits")
 VERDICT_RE = re.compile(r"(?i)(well[-\s]supported|contested|dated)")
+# G7 per-item spans -- pinned definitions (tier_model.md §G7, gt#33 row 7):
+#   E item     = a \subsection/\paragraph block (an \item when the appendix has no
+#                subsections) that appears BEFORE the "what still holds" \section; the
+#                source-stability notes after it are not currency items.
+#   F Position = from \textbf{Position X ...} to the next Position marker or the
+#                debate's "where the book sits" anchor, whichever comes first -- a
+#                citation in the verdict paragraph cannot credit a Position.
+WHAT_HOLDS_SECTION_RE = re.compile(
+    r"^\s*\\section\*?\{[^}]*(?:still\s+hold|what\s+still|source[-\s]stability|stability)",
+    re.MULTILINE | re.IGNORECASE,
+)
+F_POSITION_RE = re.compile(r"\\textbf\{\s*Position\s+[A-Z]\b", re.IGNORECASE)
 # Resolvable citation markers (same family as the epilogue gate): a biblatex cite
 # command, an arXiv id, a DOI, or an http(s) permalink. Counted on comment-stripped
 # text so a fresh scaffold's commented example-cites do not satisfy the floor.
@@ -255,15 +279,29 @@ DEFAULT_VELOCITY = "medium"
 # ---------------------------------------------------------------------------
 
 def load_guide_qa(guide_dir: Path) -> dict:
-    """Parse guide_qa.yaml (sibling of guide/); empty dict on any error."""
+    """Parse guide_qa.yaml (sibling of guide/): ``{}`` when absent or empty, RAISES when broken.
+
+    A malformed or unreadable guide_qa.yaml used to come back as ``{}`` silently,
+    which dropped every waiver / velocity / course_map the file carried and let
+    G3 / G6 / G7 evaluate defaults as if the author had written none (gt#33 row 8).
+    The ``ValueError`` propagates to ``main()``'s per-guide handler, which records
+    the guide as ``G0: audit error`` -> class FAIL, exit 1.
+    """
     qa = guide_dir / "guide_qa.yaml"
     if not qa.exists():
         return {}
     try:
         data = yaml.safe_load(qa.read_text(errors="replace"))
-    except yaml.YAMLError:
+    except (OSError, yaml.YAMLError) as exc:
+        warn_audit_error("audit_gold.load_guide_qa", qa, exc)
+        raise ValueError(f"unreadable guide_qa.yaml: {qa}: {type(exc).__name__}: {exc}") from exc
+    if data is None:
         return {}
-    return data if isinstance(data, dict) else {}
+    if not isinstance(data, dict):
+        exc = TypeError(f"top level is {type(data).__name__}, expected a mapping")
+        warn_audit_error("audit_gold.load_guide_qa", qa, exc)
+        raise ValueError(f"malformed guide_qa.yaml: {qa}: {exc}")
+    return data
 
 
 def _is_true(value) -> bool:
@@ -396,7 +434,8 @@ class GateResult:
 class HonestReport:
     slug: str
     gates: list[GateResult] = field(default_factory=list)
-    g5_reason: str = ""  # missing | scaffold | short | thin_citations | no_ef_section | pass
+    # missing | unreadable | scaffold | short | thin_citations | no_ef_section | pass
+    g5_reason: str = ""
 
     @property
     def auto_gates_pass(self) -> bool:
@@ -416,15 +455,21 @@ class HonestReport:
 # Gate 1 -- retrieval coverage + checkpoint stubs.
 # ---------------------------------------------------------------------------
 
-def count_stub_checkpoint_items(chapters_dir: Path) -> tuple[int, int]:
-    """(total, stubs) where a stub is a \\item[LOS-ID] with <10 words of body."""
+def count_stub_checkpoint_items(chapters_dir: Path) -> tuple[int, int, list[str]]:
+    """(total, stubs, unreadable) where a stub is a \\item[LOS-ID] with <10 words of body.
+
+    An unreadable chapter is returned by NAME in ``unreadable`` rather than skipped:
+    a skipped file under-counts both numbers and lets ``stubs == 0`` pass the gate
+    on content it never saw (gt#33 row 8).
+    """
     total = stubs = 0
+    unreadable: list[str] = []
     if not chapters_dir.exists():
-        return 0, 0
-    for tex in chapters_dir.glob("*.tex"):
-        try:
-            content = tex.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
+        return 0, 0, []
+    for tex in sorted(chapters_dir.glob("*.tex")):
+        content = read_text_or_warn("audit_gold.G1", tex)
+        if content is None:
+            unreadable.append(tex.name)
             continue
         for match in CHECKPOINT_ITEM_RE.finditer(content):
             total += 1
@@ -437,7 +482,7 @@ def count_stub_checkpoint_items(chapters_dir: Path) -> tuple[int, int]:
             words = [w for w in stripped.split() if len(w) > 1]
             if len(words) < 10:
                 stubs += 1
-    return total, stubs
+    return total, stubs, unreadable
 
 
 def check_gate1_retrieval(slug: str, guide_dir: Path) -> GateResult:
@@ -446,7 +491,7 @@ def check_gate1_retrieval(slug: str, guide_dir: Path) -> GateResult:
     pct = float(match.group(1)) if match else 0.0
     coverage_ok = pct >= 100.0
 
-    total, stubs = count_stub_checkpoint_items(layout.chapters_dir(guide_dir))
+    total, stubs, unreadable = count_stub_checkpoint_items(layout.chapters_dir(guide_dir))
     stubs_ok = stubs == 0
 
     parts = [f"coverage {pct:.1f}%" if match else "coverage unknown"]
@@ -458,8 +503,10 @@ def check_gate1_retrieval(slug: str, guide_dir: Path) -> GateResult:
         parts.append("< 100%")
     if not stubs_ok:
         parts.append(">0 stubs (Gold requires 0)")
+    if unreadable:
+        parts.append(f"unreadable: {', '.join(unreadable)}")
     return GateResult("G1: 100% retrieval + zero checkpoint stubs",
-                      coverage_ok and stubs_ok, "; ".join(parts))
+                      coverage_ok and stubs_ok and not unreadable, "; ".join(parts))
 
 
 # ---------------------------------------------------------------------------
@@ -609,10 +656,11 @@ def check_gate4_crossref(guide_dir: Path) -> GateResult:
     chap_count = count_chapters(chapters_dir)
     total = 0
     files_with: set[str] = set()
+    unreadable: list[str] = []
     for tex in sorted(chapters_dir.glob("*.tex")):
-        try:
-            text = tex.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
+        text = read_text_or_warn("audit_gold.G4", tex)
+        if text is None:
+            unreadable.append(tex.name)  # never skip: an unread file is a FAIL, by name
             continue
         found = len(CROSSREF_RE.findall(text))
         if found:
@@ -625,14 +673,15 @@ def check_gate4_crossref(guide_dir: Path) -> GateResult:
         min_total = max(2, min(4, chap_count // 4))
         min_files = max(2, min(3, chap_count // 3))
 
-    passed = total >= min_total and len(files_with) >= min_files
+    passed = total >= min_total and len(files_with) >= min_files and not unreadable
     detail = (f"{total} crossrefs in {len(files_with)} files "
               f"(need {min_total}/{min_files}; chapters={chap_count})")
-    if not passed:
-        if total < min_total:
-            detail += f" -- total < {min_total}"
-        elif len(files_with) < min_files:
-            detail += f" -- files < {min_files}"
+    if total < min_total:
+        detail += f" -- total < {min_total}"
+    elif len(files_with) < min_files:
+        detail += f" -- files < {min_files}"
+    if unreadable:
+        detail += f" -- unreadable: {', '.join(unreadable)}"
     return GateResult("G4: size-aware crossref floor", passed, detail)
 
 
@@ -653,10 +702,11 @@ def check_gate5_fidelity(guide_dir: Path) -> tuple[GateResult, str]:
     if not audit_files:
         return GateResult(name, False, "file missing"), "missing"
     path = audit_files[-1]
-    try:
-        text = path.read_text(encoding="utf-8", errors="ignore")
-    except OSError:
-        return GateResult(name, False, "unreadable"), "missing"
+    text = read_text_or_warn("audit_gold.G5", path)
+    if text is None:
+        # "unreadable" (not "missing"): the doc exists, so the guide classifies
+        # SCAFFOLD-ONLY (exit 1), never GOLD-ELIGIBLE.
+        return GateResult(name, False, f"{path.name}: unreadable"), "unreadable"
 
     matched = [s for s in SCAFFOLD_SIGNATURES if s in text]
     if matched:
@@ -743,14 +793,62 @@ def _count_debates(text: str) -> int:
     return len(WHERE_BOOK_RE.findall(text))
 
 
-def _check_e_appendix(guide_dir: Path, qa: dict, now: datetime) -> list[str]:
-    """Return a list of E-appendix failure reasons; empty == pass."""
+def _cite_count(text: str) -> int:
+    """Number of resolvable citation markers (``F_CITE_RES``) in *text*."""
+    return sum(len(rx.findall(text)) for rx in F_CITE_RES)
+
+
+def _e_item_spans(live: str) -> list[str]:
+    """The text of each E currency item, in order (pass comment-stripped text).
+
+    Items are the ``\\subsection``/``\\paragraph`` blocks before the "what still
+    holds" section; an appendix with no subsections falls back to its ``\\item``s.
+    """
+    cut = WHAT_HOLDS_SECTION_RE.search(live)
+    body = live[: cut.start()] if cut else live
+    marks = [m.start() for m in SUBSECTION_RE.finditer(body)]
+    if not marks:
+        marks = [m.start() for m in ITEM_RE.finditer(body)]
+    return [body[a:b] for a, b in zip(marks, marks[1:] + [len(body)])]
+
+
+def _f_position_spans(live: str) -> list[str]:
+    """The text of each F Position block, in order (pass comment-stripped text).
+
+    A block runs from its ``\\textbf{Position X`` marker to the next Position marker
+    or the debate's "where the book sits" anchor, whichever comes first.
+    """
+    starts = [m.start() for m in F_POSITION_RE.finditer(live)]
+    anchors = [m.start() for m in WHERE_BOOK_RE.finditer(live)]
+    spans: list[str] = []
+    for i, a in enumerate(starts):
+        nxt = starts[i + 1] if i + 1 < len(starts) else len(live)
+        stop = next((e for e in anchors if e > a), len(live))
+        spans.append(live[a:min(nxt, stop)])
+    return spans
+
+
+def _cite_verdict(uncited: int, total: int, noun: str) -> tuple[str | None, str | None]:
+    """``(issue, note)`` for an uncited count -- exactly one is set when ``uncited > 0``.
+
+    Under ``G7_CITES_STRICT`` the count is a gate failure (issue); otherwise it is an
+    advisory note carried in the G7 detail so the debt stays visible on every run.
+    """
+    if not total or not uncited:
+        return None, None
+    msg = f"{uncited}/{total} {noun} uncited"
+    return (msg, None) if G7_CITES_STRICT else (None, msg + ", advisory")
+
+
+def _check_e_appendix(guide_dir: Path, qa: dict, now: datetime) -> tuple[list[str], list[str]]:
+    """Return ``(failure reasons, advisory notes)`` for the E appendix; no reasons == pass."""
     path = layout.appendices_dir(guide_dir) / E_FILENAME
     if not path.exists():
-        return [f"{E_FILENAME} missing"]
+        return [f"{E_FILENAME} missing"], []
     text = path.read_text(errors="replace")
     body = strip_template_lines(text)
     issues: list[str] = []
+    notes: list[str] = []
 
     currency_items = _count_currency_items(body)
     if E_STUB_RE.search(body) and currency_items < G7_MIN_CURRENCY_ITEMS:
@@ -773,6 +871,16 @@ def _check_e_appendix(guide_dir: Path, qa: dict, now: datetime) -> list[str]:
     if not WHAT_HOLDS_RE.search(body):
         issues.append("no 'what still holds' section")
 
+    # Per-item citation presence (gt#33 row 7): every currency item span must carry
+    # >= E_ITEM_MIN_CITES resolvable markers, counted on comment-stripped text.
+    spans = _e_item_spans(_strip_tex_comments(body))
+    uncited = sum(1 for s in spans if _cite_count(s) < E_ITEM_MIN_CITES)
+    issue, note = _cite_verdict(uncited, len(spans), "items")
+    if issue:
+        issues.append(issue)
+    if note:
+        notes.append(note)
+
     mv = meap_version(guide_dir)
     if mv is not None:
         ver = mv.split()[0] if mv.split() else ""  # e.g. "v4" from "v4 (CloudFront ...)"
@@ -785,18 +893,20 @@ def _check_e_appendix(guide_dir: Path, qa: dict, now: datetime) -> list[str]:
         if re.fullmatch(r"v\d+", ver, re.IGNORECASE):
             if not re.search(rf"(?i)\b{re.escape(ver)}\b", body):
                 issues.append(f"E does not name MEAP version ({ver})")
-    return issues
+    return issues, notes
 
 
-def _check_f_appendix(guide_dir: Path, qa: dict) -> list[str]:
+def _check_f_appendix(guide_dir: Path, qa: dict) -> tuple[list[str], list[str]]:
+    """Return ``(failure reasons, advisory notes)`` for the F appendix; no reasons == pass."""
     exc = get_gold_exceptions(qa)
     if _is_true(exc.get("debates_waiver")) and str(exc.get("debates_waiver_justification", "")).strip():
-        return []  # waived
+        return [], []  # waived
     path = layout.appendices_dir(guide_dir) / F_FILENAME
     if not path.exists():
-        return [f"{F_FILENAME} missing"]
+        return [f"{F_FILENAME} missing"], []
     text = strip_template_lines(path.read_text(errors="replace"))
     issues: list[str] = []
+    notes: list[str] = []
     debates = _count_debates(text)
     if debates < G7_MIN_DEBATES:
         issues.append(f"<{G7_MIN_DEBATES} debates ({debates})")
@@ -804,27 +914,41 @@ def _check_f_appendix(guide_dir: Path, qa: dict) -> list[str]:
         issues.append("missing verdict flags (well-supported/contested/dated)")
     # Cited-Contested: every debate's Positions must carry resolvable citations.
     live = _strip_tex_comments(text)
-    cites = sum(len(rx.findall(live)) for rx in F_CITE_RES)
+    cites = _cite_count(live)
     cite_floor = max(G7_F_CITE_FLOOR, 2 * debates)
     if cites < cite_floor:
         issues.append(f"<{cite_floor} resolvable citations ({cites})")
-    return issues
+    # Per-Position floor (gt#33 row 7): the file-wide floor above lets one
+    # heavily-cited debate carry three uncited ones; each Position block must
+    # carry >= F_POSITION_MIN_CITES markers of its own.
+    positions = _f_position_spans(live)
+    uncited = sum(1 for s in positions if _cite_count(s) < F_POSITION_MIN_CITES)
+    issue, note = _cite_verdict(uncited, len(positions), "Positions")
+    if issue:
+        issues.append(issue)
+    if note:
+        notes.append(note)
+    return issues, notes
 
 
 def check_gate7_currency(guide_dir: Path, qa: dict, now: datetime) -> GateResult:
-    e_issues = _check_e_appendix(guide_dir, qa, now)
-    f_issues = _check_f_appendix(guide_dir, qa)
+    e_issues, e_notes = _check_e_appendix(guide_dir, qa, now)
+    f_issues, f_notes = _check_f_appendix(guide_dir, qa)
     exc = get_gold_exceptions(qa)
     f_waived = _is_true(exc.get("debates_waiver")) and str(exc.get("debates_waiver_justification", "")).strip()
+    f_ok_word = "waived" if f_waived else "ok"
 
     passed = not e_issues and not f_issues
-    if passed:
-        detail = "E ok; F " + ("waived" if f_waived else "ok")
+    if passed and not e_notes and not f_notes:
+        detail = f"E ok; F {f_ok_word}"
     else:
-        parts = []
-        parts.append("E: " + ("; ".join(e_issues) if e_issues else "ok"))
-        parts.append("F: " + ("; ".join(f_issues) if f_issues else ("waived" if f_waived else "ok")))
-        detail = " | ".join(parts)
+        def _part(label: str, issues: list[str], notes: list[str], ok_word: str) -> str:
+            core = "; ".join(issues) if issues else ok_word
+            if notes:
+                core += " (" + "; ".join(notes) + ")"
+            return f"{label}: {core}"
+        detail = " | ".join([_part("E", e_issues, e_notes, "ok"),
+                             _part("F", f_issues, f_notes, f_ok_word)])
     return GateResult("G7: currency appendices E/F", passed, detail)
 
 
@@ -844,16 +968,25 @@ def check_gate7_currency(guide_dir: Path, qa: dict, now: datetime) -> GateResult
 _UNDEF_CITE_RE = re.compile(
     r"(?i)(?:undefined (?:reference|citation)|(?:reference|citation) `[^']*'[^\n]*undefined"
     r"|there were undefined (?:references|citations))")
-# A biber HARD error only (``> ERROR -`` / ``> FATAL -``); the "too many commas,
-# skipping entry" failure is itself reported on a ``> ERROR -`` line, so matching a
-# bare "skipping entry" would only add false positives (benign INFO skip lines).
+# A biber HARD error (``> ERROR -`` / ``> FATAL -``) OR a ``> WARN - ... skipping``
+# line (gt#33 row 4). On a duplicate entry key ("Duplicate entry key: 'x' in file
+# 'references.bib', skipping ..."), a missing required field or an unknown entry
+# type, biber DROPS the entry and logs only a WARN -- the .bbl then binds every
+# \cite{x} to whichever duplicate survived, silently (gold-wave review 2026-08-27,
+# A6: two live-Gold guides read "biber clean" this way). The benign WARN class
+# ("BibTeX subsystem: warning: comma(s) at end of name (removing)") never says
+# "skipping"; INFO-level skip lines are excluded by the "> WARN - " anchor.
 _BIBER_ERR_RE = re.compile(r"> (?:ERROR|FATAL) -")
+# Case-insensitive: biber capitalizes the first word of some messages
+# ("WARN - Skipping entry ..."), and a dropped entry is a dropped entry.
+_BIBER_SKIP_RE = re.compile(r"> WARN - (?P<msg>[^\n]*\bskipping\b[^\n]*)", re.IGNORECASE)
 
 
 def check_gate_build(guide_dir: Path) -> GateResult:
     """GB: fresh 2-pass ``make digital`` with a clean log (LaTeX errors, undefined
-    cites/refs, and biber errors all fail it -- a non-zero make rc is not required
-    because guide Makefiles may ``-``-ignore the underlying tool's exit code)."""
+    cites/refs, biber errors AND biber "skipping" warnings -- a dropped bib entry --
+    all fail it; a non-zero make rc is not required because guide Makefiles may
+    ``-``-ignore the underlying tool's exit code)."""
     from tooling.qa.guide_readiness import _LATEX_ERROR_RE
     guide_sub = guide_dir / "guide"
     name = "GB: clean 2-pass build"
@@ -872,8 +1005,10 @@ def check_gate_build(guide_dir: Path) -> GateResult:
     err_lines = [ln.strip() for ln in log_text.splitlines() if _LATEX_ERROR_RE.match(ln)]
     undef = bool(_UNDEF_CITE_RE.search(log_text))
     blg = guide_sub / "main_digital.blg"
-    biber_err = bool(blg.exists() and _BIBER_ERR_RE.search(blg.read_text(errors="replace")))
-    if proc.returncode == 0 and not err_lines and not undef and not biber_err:
+    blg_text = blg.read_text(errors="replace") if blg.exists() else ""
+    biber_err = bool(_BIBER_ERR_RE.search(blg_text))
+    biber_skip = _BIBER_SKIP_RE.search(blg_text)
+    if proc.returncode == 0 and not err_lines and not undef and not biber_err and not biber_skip:
         return GateResult(name, True, "rc=0; 0 LaTeX errors; cites + biber clean")
     parts = [f"rc={proc.returncode}"]
     if err_lines:
@@ -882,7 +1017,9 @@ def check_gate_build(guide_dir: Path) -> GateResult:
         parts.append("undefined reference/citation in log")
     if biber_err:
         parts.append("biber ERROR in .blg (failed/skipped entry)")
-    if proc.returncode != 0 and not (err_lines or undef or biber_err):
+    if biber_skip:
+        parts.append(f"biber WARN skipped entry in .blg: {biber_skip.group('msg')[:70]}")
+    if proc.returncode != 0 and not (err_lines or undef or biber_err or biber_skip):
         parts.append("build rc!=0 (see main_digital.log)")
     return GateResult(name, False, "; ".join(parts))
 
@@ -909,18 +1046,25 @@ def audit_guide_gold(guide_dir: Path, now: datetime, build: bool = False) -> Hon
     return report
 
 
-def filter_silver_pass(guide_dirs: list[Path]) -> list[Path]:
-    """Restrict a fleet run to Silver-PASS guides (via the tooling Silver audit)."""
+def filter_silver_pass(guide_dirs: list[Path]) -> tuple[list[Path], list[tuple[Path, Exception]]]:
+    """Restrict a fleet run to Silver-PASS guides; return ``(passing, errored)``.
+
+    A guide whose Silver pre-check RAISES comes back in ``errored`` so ``main()``
+    can report it as a FAIL row (``G0: silver pre-check error``). It used to be
+    printed to stderr and dropped from the report entirely -- a guide that
+    vanished counted as neither Gold nor FAIL (gt#33 row 8).
+    """
     from tooling.audits.fleet.audit_silver import audit_guide as silver_audit
-    out = []
+    out: list[Path] = []
+    errored: list[tuple[Path, Exception]] = []
     for gd in guide_dirs:
         try:
             if silver_audit(gd).get("silver_pass"):
                 out.append(gd)
         except Exception as exc:  # noqa: BLE001 -- a broken guide must not abort the fleet
-            print(f"Warning: Silver audit error for {gd.name}: {exc!r}", file=sys.stderr)
-            continue
-    return out
+            warn_audit_error("audit_gold.filter_silver_pass", gd, exc)
+            errored.append((gd, exc))
+    return out, errored
 
 
 # ---------------------------------------------------------------------------
@@ -1016,6 +1160,7 @@ def main() -> None:
                          "(audit_gold is static without this). Slow; compiles each guide.")
     args = ap.parse_args()
 
+    errored: list[tuple[Path, Exception]] = []
     if args.guide:
         from tooling.audits.guide._guide_scope import guide_dir_for_slug
         gd = guide_dir_for_slug(args.guide)
@@ -1024,7 +1169,7 @@ def main() -> None:
             sys.exit(1)
         targets = [gd]
     else:
-        targets = filter_silver_pass(discovery.iter_guide_dirs())
+        targets, errored = filter_silver_pass(discovery.iter_guide_dirs())
 
     now = datetime.now()
     meta = git_metadata()
@@ -1033,9 +1178,15 @@ def main() -> None:
         try:
             reports.append(audit_guide_gold(gd, now, build=args.build))
         except Exception as exc:  # noqa: BLE001 -- one bad guide must not abort the fleet
+            warn_audit_error("audit_gold.audit_guide_gold", gd, exc)
             r = HonestReport(slug=gd.name)
             r.gates.append(GateResult("G0: audit error", False, f"{type(exc).__name__}: {exc}"))
             reports.append(r)
+    for gd, exc in errored:  # Silver pre-check blew up: a FAIL row, not a vanished guide
+        r = HonestReport(slug=gd.name)
+        r.gates.append(GateResult("G0: silver pre-check error", False,
+                                  f"{type(exc).__name__}: {exc}"))
+        reports.append(r)
     print_report(reports, meta, verbose=args.verbose)
 
     if args.report:

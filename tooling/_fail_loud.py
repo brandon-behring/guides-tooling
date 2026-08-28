@@ -38,3 +38,28 @@ def warn_audit_error(module: str, path: Path | str, exc: Exception) -> None:
         )
     except Exception:  # noqa: BLE001 — broken/closed stderr must not abort the scan
         pass
+
+
+def read_text_or_warn(
+    module: str, path: Path, *, encoding: str = "utf-8", errors: str = "ignore"
+) -> str | None:
+    """Read *path* as text, or warn via :func:`warn_audit_error` and return ``None``.
+
+    The fail-loud replacement for the ``except OSError: continue`` idiom (gt#33 row 8):
+    a caller that gets ``None`` must record the path as *unreadable* in its result (so
+    the gate FAILs) rather than skip it as if the file did not exist.
+
+    Parameters
+    ----------
+    module : str
+        Audit name for the ``[audit-error]`` line, e.g. ``"audit_gold.G1"``.
+    path : Path
+        The file to read.
+    encoding, errors : str
+        Passed to :meth:`pathlib.Path.read_text`.
+    """
+    try:
+        return path.read_text(encoding=encoding, errors=errors)
+    except OSError as exc:
+        warn_audit_error(module, path, exc)
+        return None

@@ -26,6 +26,7 @@ import re
 import sys
 from dataclasses import dataclass
 
+from tooling._fail_loud import read_text_or_warn
 from tooling.audits.fleet.audit_gold import CHECKPOINT_ITEM_RE  # single source of truth
 from tooling.audits.guide._guide_scope import chapter_files, guide_dir_for_slug
 
@@ -45,13 +46,20 @@ class Leak:
     snippet: str
 
 
-def find_bloom_leaks(guide_dir) -> list[Leak]:
-    """Return every checkpoint item whose body opens with a duplicated word."""
+def find_bloom_leaks(guide_dir, unreadable: list[str] | None = None) -> list[Leak]:
+    """Return every checkpoint item whose body opens with a duplicated word.
+
+    An unreadable chapter is appended (by name) to ``unreadable`` when the caller
+    passes a list -- and always announced on stderr -- instead of being skipped as
+    if it had no checkpoints (gt#33 row 8; this audit is strict-gated in G2, so a
+    silent skip was a false PASS).
+    """
     leaks: list[Leak] = []
     for tex in chapter_files(guide_dir):
-        try:
-            content = tex.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
+        content = read_text_or_warn("audit_checkpoint_bloom_verbs", tex)
+        if content is None:
+            if unreadable is not None:
+                unreadable.append(tex.name)
             continue
         for m in CHECKPOINT_ITEM_RE.finditer(content):
             los_id, body = m.group(1), m.group(2).lstrip()
@@ -76,13 +84,15 @@ def main() -> None:
         print(f"Error: guide not found for slug: {args.guide}", file=sys.stderr)
         sys.exit(2)
 
-    leaks = find_bloom_leaks(guide_dir)
+    unreadable: list[str] = []
+    leaks = find_bloom_leaks(guide_dir, unreadable)
 
     if args.json:
         print(json.dumps({
             "slug": args.guide,
             "count": len(leaks),
             "leaks": [vars(leak) for leak in leaks],
+            "unreadable": unreadable,
         }, indent=2))
     else:
         if leaks:
@@ -92,12 +102,15 @@ def main() -> None:
         else:
             print(f"PASS  {args.guide}: 0 checkpoint Bloom-verb leaks")
 
-    # --strict: a duplicated leading verb is an unambiguous, visible defect.
-    # FAIL goes to stderr; exit 1 is what audit_gold G2 keys on.
-    if args.strict and leaks:
+    # --strict: a duplicated leading verb is an unambiguous, visible defect, and an
+    # unreadable chapter is an audit that could not run. FAIL goes to stderr; exit 1
+    # is what audit_gold G2 keys on.
+    if args.strict and (leaks or unreadable):
         for leak in leaks:
             print(f"FAIL  {args.guide}: checkpoint {leak.los_id} Bloom-verb leak "
                   f"({leak.file}:{leak.line})", file=sys.stderr)
+        for name in unreadable:
+            print(f"FAIL  {args.guide}: unreadable chapter {name}", file=sys.stderr)
         sys.exit(1)
 
 

@@ -32,7 +32,12 @@ from tooling.layout import cards_dir, chapter_files  # noqa: F401
 
 @lru_cache(maxsize=1)
 def _slug_index() -> dict[str, Path]:
-    """slug (directory name) → its actual (possibly topic-nested) guide dir."""
+    """slug (directory name) → its actual (possibly topic-nested) guide dir.
+
+    Uniqueness is enforced upstream: :func:`tooling.discovery.iter_guide_dirs`
+    raises :class:`tooling.discovery.DuplicateGuideSlug` on a basename collision,
+    so this comprehension can never silently keep the last duplicate (DRIVER-1).
+    """
     return {d.name: d for d in discovery.iter_guide_dirs()}
 
 

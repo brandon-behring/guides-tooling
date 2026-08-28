@@ -6,9 +6,9 @@ Stricter than `audit_silver_fleet.py`, which warns its own output is
 script applies section-presence and role-delta semantic checks that
 the heuristic auditor intentionally skips.
 
-Per `docs/standards/00_universal/tier_model.md`, Silver = Bronze 9/9 +
+Per `docs/standards/00_universal/tier_model.md`, Silver = Bronze 10/10 +
 4 content gates (manifest, Appendix D, IC.md, dashboard). This script
-evaluates the 4 content gates semantically; Bronze 9/9 is a separate
+evaluates the 4 content gates semantically; Bronze 10/10 is a separate
 pre-requisite tracked by `audit_all_courses.py`.
 
 Gate semantics
@@ -72,6 +72,7 @@ from pathlib import Path
 import yaml
 
 from tooling import discovery, layout, paths
+from tooling._fail_loud import warn_audit_error
 from tooling.audits.fleet.audit_silver_fleet import (
     check_dashboard as check_dashboard_heuristic,
     check_manifest as check_manifest_heuristic,
@@ -307,7 +308,8 @@ def silver_sweep_touched_guides() -> set[str]:
              "--name-only", "--pretty=format:"],
             capture_output=True, text=True, check=True,
         )
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        warn_audit_error("audit_silver.silver_sweep_touched_guides", paths.host_root(), exc)
         return set()
     touched: set[str] = set()
     for line in result.stdout.splitlines():
@@ -331,7 +333,8 @@ def is_short_dlai(guide: Path) -> bool:
         return False
     try:
         return float(match.group(1)) < DLAI_SHORT_HOURS_THRESHOLD
-    except ValueError:
+    except ValueError as exc:
+        warn_audit_error("audit_silver.is_short_dlai", claude_md, exc)
         return False
 
 
@@ -430,7 +433,8 @@ def count_cards(guide: Path) -> int:
         return 0
     try:
         data = yaml.safe_load(cards_yaml.read_text(errors="replace"))
-    except yaml.YAMLError:
+    except (OSError, yaml.YAMLError) as exc:
+        warn_audit_error("audit_silver.count_cards", cards_yaml, exc)
         return 0
     if not isinstance(data, dict):
         return 0
@@ -474,7 +478,8 @@ def load_los_prefix(guide: Path) -> str | None:
         return None
     try:
         data = yaml.safe_load(qa.read_text(errors="replace"))
-    except yaml.YAMLError:
+    except (OSError, yaml.YAMLError) as exc:
+        warn_audit_error("audit_silver.load_los_prefix", qa, exc)
         return None
     if not isinstance(data, dict):
         return None

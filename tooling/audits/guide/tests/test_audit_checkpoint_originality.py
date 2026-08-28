@@ -228,3 +228,110 @@ def test_line_numbers_reported(tmp_path):
 """
     _total, items = find_template_tails(_make_guide(tmp_path, body))
     assert items[0].line == 3          # 1-indexed line of the \item
+
+
+# ── Signal C: verbatim-LOS prompts (gt#33 / r2 review 2026-08-28) ────────────
+
+LOS_BLOCK = r"""
+\begin{learningoutcomes}
+    \los{V-1.1}{Identify}{the major application areas for language models beyond natural language text}
+    \los{V-1.2}{Compare}{encoder-only and decoder-only architectures for a classification task}
+    \los{S-1.1}{Define}{it}
+\end{learningoutcomes}
+"""
+
+
+def _kinds(reason: str) -> set[str]:
+    return {p.split("(")[0] for p in reason.split(",")}
+
+
+def test_prompt_equal_to_los_is_verbatim_los(tmp_path):
+    body = LOS_BLOCK + r"""
+\begin{enumerate}
+  \item[V-1.1] Identify the major application areas for language models beyond natural language text.
+  \item[V-1.2] Which architecture would you pick for spam classification and what does the decision hinge on?
+\end{enumerate}
+"""
+    total, ids, reasons = _flagged(_make_guide(tmp_path, body))
+    assert total == 2
+    assert ids == ["V-1.1"]
+    assert _kinds(reasons["V-1.1"]) == {"verbatim-los"}
+
+
+def test_los_prefix_plus_known_tail_hits_both_signals(tmp_path):
+    body = LOS_BLOCK + r"""
+\begin{enumerate}
+  \item[V-1.1] Identify the major application areas for language models beyond natural language text to a concrete problem you construct. Show the first step, the signal that it worked, and one thing that can go wrong.
+\end{enumerate}
+"""
+    _total, ids, reasons = _flagged(_make_guide(tmp_path, body))
+    assert ids == ["V-1.1"]
+    assert {"verbatim-los", "known-tail"} <= _kinds(reasons["V-1.1"])
+
+
+def test_los_embedded_mid_prompt_is_verbatim_los(tmp_path):
+    body = LOS_BLOCK + r"""
+\begin{enumerate}
+  \item[V-1.1] Before reading on, identify the major application areas for language models beyond natural language text, then rank them by data availability.
+\end{enumerate}
+"""
+    _total, ids, _reasons = _flagged(_make_guide(tmp_path, body))
+    assert ids == ["V-1.1"]
+
+
+def test_paraphrased_prompt_not_flagged(tmp_path):
+    body = LOS_BLOCK + r"""
+\begin{enumerate}
+  \item[V-1.1] Beyond natural-language text, which application areas does the book single out for language models, and what makes each a fit?
+\end{enumerate}
+"""
+    _total, ids, _reasons = _flagged(_make_guide(tmp_path, body))
+    assert ids == []
+
+
+def test_los_defined_in_sibling_chapter_is_matched(tmp_path):
+    ch = tmp_path / "guide" / "chapters"
+    ch.mkdir(parents=True)
+    (ch / "01_m1_a.tex").write_text(LOS_BLOCK, encoding="utf-8")
+    (ch / "02_m2_b.tex").write_text(r"""
+\begin{enumerate}
+  \item[V-1.2] Compare encoder-only and decoder-only architectures for a classification task.
+\end{enumerate}
+""", encoding="utf-8")
+    _total, ids, reasons = _flagged(tmp_path)
+    assert ids == ["V-1.2"]
+    assert "verbatim-los" in _kinds(reasons["V-1.2"])
+
+
+def test_commented_los_ignored(tmp_path):
+    body = r"""
+% \los{V-1.1}{Identify}{the major application areas for language models beyond natural language text}
+\begin{enumerate}
+  \item[V-1.1] Identify the major application areas for language models beyond natural language text.
+\end{enumerate}
+"""
+    _total, ids, _reasons = _flagged(_make_guide(tmp_path, body))
+    assert ids == []
+
+
+def test_short_los_below_min_words_not_matched(tmp_path):
+    body = LOS_BLOCK + r"""
+\begin{enumerate}
+  \item[S-1.1] Define it precisely, then give two counterexamples from the chapter's own case study.
+\end{enumerate}
+"""
+    _total, ids, _reasons = _flagged(_make_guide(tmp_path, body))
+    assert ids == []
+
+
+def test_templated_split_properties(tmp_path):
+    body = LOS_BLOCK + r"""
+\begin{enumerate}
+  \item[V-1.1] Identify the major application areas for language models beyond natural language text.
+  \item[V-1.2] Apply a thing to a concrete problem you construct. Show the first step, the signal that it worked, and one thing that can go wrong.
+\end{enumerate}
+"""
+    _total, items = find_template_tails(_make_guide(tmp_path, body))
+    by = {t.los_id: t for t in items}
+    assert by["V-1.1"].is_verbatim_los and not by["V-1.1"].is_tail
+    assert by["V-1.2"].is_tail and not by["V-1.2"].is_verbatim_los

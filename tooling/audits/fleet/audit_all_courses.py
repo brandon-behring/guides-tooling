@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""audit_all_courses.py -- Run 9-point Bronze checklist + Silver gate across all courses.
+"""audit_all_courses.py -- Run the Bronze structural checklist + Silver gate across all courses.
 
 Discovers courses by looking for guide_qa.yaml files.
 Produces a markdown fleet audit report.
 
-Bronze gate: 9-point structural checklist (scoring out of 9; 9/9 = Bronze GREEN).
-Silver gate: PASS requires Bronze 9/9 AND all four content gates per
+Bronze gate: the ``BRONZE_CHECKS`` structural checklist (10 checks as of gt#33;
+    scoring out of ``BRONZE_TOTAL``; all GREEN = Bronze). Check 10, "Stub-free
+    includes", reads ``guide/main.tex`` and RED-flags any ``\\input``/``\\include``
+    target that is missing, unreadable, empty, or a TODO/TBD/FIXME/PLACEHOLDER
+    body -- the class that shipped 87 ``TODO`` appendix chapters into delivered
+    PDFs while every tier gate stayed green (gold-wave review 2026-08-27, A1).
+Silver gate: PASS requires Bronze BRONZE_TOTAL/BRONZE_TOTAL AND all four content gates per
     docs/standards/00_universal/tier_model.md:29 ("Silver = Bronze plus..."):
       1. Source manifest (audit_source_manifest.py, <30% TODO density)
       2. Real Appendix D (>=5 interview questions + role/level mapping, or
@@ -14,7 +19,7 @@ Silver gate: PASS requires Bronze 9/9 AND all four content gates per
       4. Non-stub dashboard (real qa-health metrics)
     Delegates the 4-gate content check to scripts/audit_silver.py
     so this script agrees with the authoritative Silver roster. A guide
-    that fails Bronze (green<9) is reported as Silver FAIL regardless of
+    that fails Bronze (green<BRONZE_TOTAL) is reported as Silver FAIL regardless of
     content gates, because Silver builds on Bronze.
 
 Usage:
@@ -27,25 +32,20 @@ from __future__ import annotations
 
 import argparse
 import os
+import pathlib
 import re
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
 from tooling import discovery, layout, paths
+from tooling._fail_loud import read_text_or_warn, warn_audit_error
+# Silver gate: the authoritative four-content-gate auditor.
+from tooling.audits.fleet.audit_silver import audit_guide as audit_silver_honest_guide
+from tooling.validation._latex import strip_latex_comments
 
 REPORTS_DIR = paths.host_root() / "reports"
-EXCLUDE_DIRS = {
-    "shared", "scripts", "_archived", ".git", ".claude", "docs", "reports",
-    "templates",
-    # Non-guide artifacts (curriculum / reading-list documents, not course guides):
-    "manning_curriculum",
-}
-
-# Silver audit helpers
-from tooling._fail_loud import warn_audit_error
-from tooling.audits.fleet.audit_source_manifest import audit_guide as audit_silver_guide
-from tooling.audits.fleet.audit_silver import audit_guide as audit_silver_honest_guide
 
 SILVER_MAX_TODO_PCT = 30.0
 
@@ -59,10 +59,27 @@ STANDARD_LEVELS = {
 def discover_courses() -> list[Path]:
     """Find all guide directories (recursive; handles topic-nested layouts).
 
-    Delegates to the centralized recursive walk and drops known non-guide dirs
-    (curriculum / reading-list folders) by basename.
+    Delegates to :func:`tooling.discovery.iter_guide_dirs`, which owns the
+    non-guide exclusions (the old basename-filtered ``EXCLUDE_DIRS`` here could
+    not see a copy nested under ``reports/`` -- gt#33 / DRIVER-1).
     """
-    return [g for g in discovery.iter_guide_dirs() if g.name not in EXCLUDE_DIRS]
+    return discovery.iter_guide_dirs()
+
+
+def registry_slugs_missing_on_disk(courses: list[Path]) -> list[str]:
+    """Registry slugs (``guides.yml``, non-archived) with no discovered guide dir.
+
+    The registry-topic allowlist in discovery hides a guide whose topic dir was
+    renamed or never registered; this guard makes that loud instead of letting the
+    fleet shrink silently. ``[]`` when the host has no registry.
+    """
+    from tooling import scope
+
+    try:
+        registered = {g.slug for g in scope.get_all_guides()}
+    except FileNotFoundError:
+        return []
+    return sorted(registered - {c.name for c in courses})
 
 
 def check_guide_qa(course: Path) -> tuple[str, str]:
@@ -225,8 +242,131 @@ def check_hardcoded_paths(course: Path) -> tuple[str, str]:
     return "GREEN", "clean"
 
 
+# Check 10 -- stub-free includes (gt#33 row 3 / gold-wave review 2026-08-27 A1).
+INCLUDE_RE = re.compile(
+    r"\\(?:input|include)\s*(?:\{([^}]+)\}|([^\s{\\%]+))"
+)
+# Lines that are document *structure*, not body: a file consisting only of these
+# (plus blank lines / comments) has no content. \begin{learningoutcomes}, \los{},
+# \section prose etc. all count as content, so an LOS-only chapter is NOT a stub.
+_STRUCTURAL_LINE_RE = re.compile(
+    r"^\s*\\(?:chapter|section|subsection|subsubsection|label)\*?\s*"
+    r"(?:\[[^\]]*\])?\s*\{[^{}]*\}"
+)
+# The body's first content line announces a placeholder.
+_STUB_BODY_RE = re.compile(r"^\s*(?:TODO|TBD|FIXME|PLACEHOLDER)\b", re.IGNORECASE)
+_MAX_LISTED_PROBLEMS = 3
+
+
+# Formatting-only wrappers stripped before the placeholder test, so a body whose
+# whole payload is ``\textbf{TODO: write this}`` or ``\item TODO`` is still a stub.
+_WRAPPER_RE = re.compile(
+    r"\\(?:textbf|textit|emph|texttt|item|par|noindent|centering)\b\s*|[{}]"
+)
+
+
+def _body_lines(text: str) -> list[str]:
+    """Non-blank content lines: comments dropped, structural COMMANDS removed.
+
+    Only the command and its arguments go; text sharing the line with it stays, so
+    ``\\section{Overview} Real prose.`` is content, not an empty body.
+    """
+    out = []
+    for raw in strip_latex_comments(text).splitlines():
+        line = _STRUCTURAL_LINE_RE.sub("", raw, count=1).strip()
+        if line:
+            out.append(line)
+    return out
+
+
+def classify_include_body(text: str) -> str | None:
+    """Classify the body of an ``\\input``-ed file: ``"empty"``, ``"stub"``, or ``None``.
+
+    Comments are stripped first (``strip_latex_comments``), then blank lines and
+    structural lines (``\\chapter`` / ``\\section`` / ``\\label`` ...) are dropped. No
+    line left => ``"empty"``; first remaining line starting with TODO / TBD / FIXME /
+    PLACEHOLDER => ``"stub"``; anything else is real content (``None``).
+
+    >>> classify_include_body("\\\\chapter{QR}\\nTODO: add tables\\n")
+    'stub'
+    >>> classify_include_body("\\\\chapter{X}\\n\\\\section{Y} Real prose.\\n")
+    """
+    content = _body_lines(text)
+    if not content:
+        return "empty"
+    if _STUB_BODY_RE.match(_WRAPPER_RE.sub("", content[0]).strip()):
+        return "stub"
+    return None
+
+
+def check_main_includes(course: Path) -> tuple[str, str]:
+    """Check 10: every ``\\input``/``\\include`` in ``guide/main.tex`` resolves to real content.
+
+    Targets are resolved relative to ``guide/`` (where LaTeX runs); ``.tex`` is
+    appended when absent. Commented-out includes (the gm#93 ``% \\input{...}``
+    un-input form) are ignored. RED lists the first ``_MAX_LISTED_PROBLEMS``
+    offenders as ``missing: X`` / ``unreadable: X`` / ``empty: X`` / ``TODO body: X``.
+    """
+    main = layout.guide_root(course) / "main.tex"
+    if not main.exists():
+        return "RED", "guide/main.tex missing"
+    text = read_text_or_warn("audit_all_courses.check_main_includes", main)
+    if text is None:
+        return "RED", "guide/main.tex unreadable"
+    problems: list[str] = []
+    resolved = 0
+    for braced, bare in INCLUDE_RE.findall(strip_latex_comments(text)):
+        rel = (braced or bare).strip()
+        # Only an EXTENSIONLESS target gets ``.tex``; ``preamble.ltx`` is not
+        # ``preamble.ltx.tex`` (review of #35).
+        if "." not in pathlib.PurePosixPath(rel).name:
+            rel += ".tex"
+        resolved += 1
+        path = main.parent / rel
+        if not path.exists():
+            problems.append(f"missing: {rel}")
+            continue
+        body = read_text_or_warn("audit_all_courses.check_main_includes", path)
+        if body is None:
+            problems.append(f"unreadable: {rel}")
+            continue
+        kind = classify_include_body(body)
+        if kind == "empty":
+            problems.append(f"empty: {rel}")
+        elif kind == "stub":
+            problems.append(f"TODO body: {rel}")
+    if problems:
+        shown = "; ".join(problems[:_MAX_LISTED_PROBLEMS])
+        rest = len(problems) - _MAX_LISTED_PROBLEMS
+        extra = f" (+{rest} more)" if rest > 0 else ""
+        return "RED", f"{len(problems)} include(s): {shown}{extra}"
+    if not resolved:
+        # A main.tex that includes nothing is not a pass: the check would be
+        # vacuous, and a lost include list should be visible (review of #35).
+        return "YELLOW", "no \\input/\\include targets found in guide/main.tex"
+    return "GREEN", f"{resolved} includes resolved, stub-free"
+
+
+# The Bronze checklist, in report order. BRONZE_TOTAL is the single denominator
+# every score / docstring / summary derives from (gt#33: adding check 10 must not
+# leave a stale literal behind).
+BRONZE_CHECKS: list[tuple[str, Callable[[Path], tuple[str, str]]]] = [
+    ("guide_qa.yaml", check_guide_qa),
+    ("Validation tooling", check_validation_symlinks),
+    ("Makefile QA targets", check_makefile_qa),
+    ("notebook-extensions.sty", check_extensions_sty),
+    ("Cards extracted", check_cards),
+    ("Anki deck", check_deck),
+    ("Dashboard", check_dashboard),
+    ("Bloom's levels", check_bloom_levels),
+    ("No hardcoded paths", check_hardcoded_paths),
+    ("Stub-free includes", check_main_includes),
+]
+BRONZE_TOTAL = len(BRONZE_CHECKS)
+
+
 def check_silver(course: Path, bronze_green: int) -> tuple[str, str]:
-    """Silver gate: Bronze 9/9 precondition + four content gates.
+    """Silver gate: Bronze BRONZE_TOTAL/BRONZE_TOTAL precondition + four content gates.
 
     Per docs/standards/00_universal/tier_model.md:29, "Silver = Bronze plus...".
     This function delegates the four content gates (manifest, App-D, IC.md,
@@ -238,24 +378,25 @@ def check_silver(course: Path, bronze_green: int) -> tuple[str, str]:
     course : Path
         Absolute path to the guide workspace (contains guide_qa.yaml).
     bronze_green : int
-        Number of Bronze checks at GREEN (out of 9). Silver requires 9/9.
+        Number of Bronze checks at GREEN (out of BRONZE_TOTAL). Silver requires all.
 
     Returns
     -------
     tuple[str, str]
         (status, detail) where status is one of:
-        - "PASS": Bronze 9/9 AND all four Silver content gates pass
-        - "FAIL": Bronze <9/9 OR one-or-more Silver content gates fail
+        - "PASS": Bronze all-GREEN AND all four Silver content gates pass
+        - "FAIL": Bronze below all-GREEN OR one-or-more Silver content gates fail
         - "MISSING": manifest is missing (special case of FAIL, kept for
                      backwards-compatible report filtering)
     """
-    if bronze_green < 9:
-        return "FAIL", f"bronze {bronze_green}/9 (Silver requires 9/9)"
-    # Bronze 9/9 -- check the four content gates via the authoritative auditor.
+    full = f"{BRONZE_TOTAL}/{BRONZE_TOTAL}"
+    if bronze_green < BRONZE_TOTAL:
+        return "FAIL", f"bronze {bronze_green}/{BRONZE_TOTAL} (Silver requires {full})"
+    # Bronze all-GREEN -- check the four content gates via the authoritative auditor.
     honest = audit_silver_honest_guide(course)
     gates = honest["gates"]
     if honest["silver_pass"]:
-        return "PASS", "bronze 9/9 + all four content gates"
+        return "PASS", f"bronze {full} + all four content gates"
     # At least one content gate failed; surface the first-failing reason.
     if not gates["Manifest"]["pass"]:
         if gates["Manifest"]["reason"] == "manifest_missing":
@@ -270,7 +411,7 @@ def check_silver(course: Path, bronze_green: int) -> tuple[str, str]:
 
 
 def audit_course(course: Path) -> dict:
-    """Run the 9-point Bronze checklist + Silver gate on one course.
+    """Run the Bronze checklist (``BRONZE_CHECKS``) + Silver gate on one course.
 
     Parameters
     ----------
@@ -281,22 +422,11 @@ def audit_course(course: Path) -> dict:
     -------
     dict
         Keys: "course" (slug), "checks" (list of Bronze check results),
-        "green" / "yellow" / "red" (Bronze status counts out of 9),
+        "green" / "yellow" / "red" (Bronze status counts out of BRONZE_TOTAL),
         "silver" (dict with "status" in {PASS, FAIL, MISSING} and "detail").
     """
-    checks = [
-        ("guide_qa.yaml", check_guide_qa),
-        ("Validation tooling", check_validation_symlinks),
-        ("Makefile QA targets", check_makefile_qa),
-        ("notebook-extensions.sty", check_extensions_sty),
-        ("Cards extracted", check_cards),
-        ("Anki deck", check_deck),
-        ("Dashboard", check_dashboard),
-        ("Bloom's levels", check_bloom_levels),
-        ("No hardcoded paths", check_hardcoded_paths),
-    ]
     results = []
-    for name, fn in checks:
+    for name, fn in BRONZE_CHECKS:
         status, detail = fn(course)
         results.append({"name": name, "status": status, "detail": detail})
     green = sum(1 for r in results if r["status"] == "GREEN")
@@ -315,16 +445,17 @@ def format_report(audits: list[dict]) -> str:
     """Generate markdown fleet audit report with Bronze + Silver columns."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     lines = [
-        f"# QA Fleet Audit Report",
-        f"",
+        "# QA Fleet Audit Report",
+        "",
         f"Generated: {now}",
         f"Courses audited: {len(audits)}",
-        f"",
+        "",
         "## Summary Table",
         "",
-        "Bronze score = 9-point structural checklist (G/Y/R counts + N/9 score).",
-        "Silver = Bronze 9/9 + four content gates (manifest, App-D, IC.md, dashboard); "
-        "delegates to scripts/audit_silver.py.",
+        f"Bronze score = {BRONZE_TOTAL}-point structural checklist "
+        f"(G/Y/R counts + N/{BRONZE_TOTAL} score).",
+        f"Silver = Bronze {BRONZE_TOTAL}/{BRONZE_TOTAL} + four content gates "
+        "(manifest, App-D, IC.md, dashboard); delegates to scripts/audit_silver.py.",
         "",
         "| Course | G | Y | R | Bronze | Silver |",
         "|--------|---|---|---|--------|--------|",
@@ -333,12 +464,12 @@ def format_report(audits: list[dict]) -> str:
     fully_compliant = 0
     silver_pass = silver_fail = silver_missing = 0
     for a in sorted(audits, key=lambda x: (-x["green"], x["silver"]["status"] != "PASS", x["course"])):
-        score = f"{a['green']}/9"
+        score = f"{a['green']}/{BRONZE_TOTAL}"
         silver = a["silver"]["status"]
         lines.append(
             f"| {a['course']} | {a['green']} | {a['yellow']} | {a['red']} | {score} | {silver} |"
         )
-        if a["green"] == 9:
+        if a["green"] == BRONZE_TOTAL:
             fully_compliant += 1
         if silver == "PASS":
             silver_pass += 1
@@ -349,16 +480,18 @@ def format_report(audits: list[dict]) -> str:
 
     lines.extend([
         "",
-        f"## Fleet Health",
-        f"",
-        f"### Bronze (9-point structural checklist)",
-        f"",
-        f"- **Fully compliant (9/9)**: {fully_compliant}/{len(audits)}",
-        f"- **Partial (4-8/9)**: {sum(1 for a in audits if 4 <= a['green'] < 9)}/{len(audits)}",
-        f"- **Minimal (0-3/9)**: {sum(1 for a in audits if a['green'] < 4)}/{len(audits)}",
-        f"",
-        f"### Silver (Bronze 9/9 + four content gates)",
-        f"",
+        "## Fleet Health",
+        "",
+        f"### Bronze ({BRONZE_TOTAL}-point structural checklist)",
+        "",
+        f"- **Fully compliant ({BRONZE_TOTAL}/{BRONZE_TOTAL})**: {fully_compliant}/{len(audits)}",
+        f"- **Partial (4-{BRONZE_TOTAL - 1}/{BRONZE_TOTAL})**: "
+        f"{sum(1 for a in audits if 4 <= a['green'] < BRONZE_TOTAL)}/{len(audits)}",
+        f"- **Minimal (0-3/{BRONZE_TOTAL})**: "
+        f"{sum(1 for a in audits if a['green'] < 4)}/{len(audits)}",
+        "",
+        f"### Silver (Bronze {BRONZE_TOTAL}/{BRONZE_TOTAL} + four content gates)",
+        "",
         f"- **PASS**: {silver_pass}/{len(audits)}",
         f"- **FAIL**: {silver_fail}/{len(audits)}",
         f"- **MISSING**: {silver_missing}/{len(audits)}",
@@ -411,13 +544,30 @@ def main() -> None:
     parser.add_argument(
         "--strict",
         action="store_true",
-        help="exit non-zero if any guide is below Bronze 9/9 (CI gate; ignores Silver)",
+        help=f"exit non-zero if any guide is below Bronze {BRONZE_TOTAL}/{BRONZE_TOTAL} "
+             "(CI gate; ignores Silver)",
     )
     args = parser.parse_args()
 
     courses = discover_courses()
+    # The guard runs BEFORE the empty-fleet return: a registry with guides and a
+    # disk with none is exactly the disappearance it exists to catch (review of #35).
+    missing = registry_slugs_missing_on_disk(courses)
+    if missing:
+        print(
+            f"REGISTRY: {len(missing)} guides.yml slug(s) have no guide dir on disk: "
+            f"{', '.join(missing)}",
+            file=sys.stderr,
+        )
     if not courses:
         print("No courses found with guide_qa.yaml")
+        if args.strict and missing:
+            print(
+                f"\nSTRICT: {len(missing)} registered guide(s) missing on disk "
+                "(see REGISTRY line)",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         return
 
     print(f"Auditing {len(courses)} courses...")
@@ -433,10 +583,10 @@ def main() -> None:
     print(f"\nReport saved: {report_path}")
 
     # Print summary
-    fully_compliant = sum(1 for a in audits if a["green"] == 9)
+    fully_compliant = sum(1 for a in audits if a["green"] == BRONZE_TOTAL)
     silver_pass = sum(1 for a in audits if a["silver"]["status"] == "PASS")
     print(
-        f"\nFleet: Bronze {fully_compliant}/{len(audits)} (9/9); "
+        f"\nFleet: Bronze {fully_compliant}/{len(audits)} ({BRONZE_TOTAL}/{BRONZE_TOTAL}); "
         f"Silver {silver_pass}/{len(audits)} (PASS)"
     )
 
@@ -456,12 +606,19 @@ def main() -> None:
         print(report)
 
     if args.strict:
-        failing = [a["course"] for a in audits if a["green"] < 9]
+        failing = [a["course"] for a in audits if a["green"] < BRONZE_TOTAL]
         if failing:
             print(
-                f"\nSTRICT: {len(failing)} guide(s) below Bronze 9/9: {', '.join(sorted(failing))}",
+                f"\nSTRICT: {len(failing)} guide(s) below Bronze {BRONZE_TOTAL}/{BRONZE_TOTAL}: "
+                f"{', '.join(sorted(failing))}",
                 file=sys.stderr,
             )
+        if missing:
+            print(
+                f"\nSTRICT: {len(missing)} registered guide(s) missing on disk (see REGISTRY line)",
+                file=sys.stderr,
+            )
+        if failing or missing:
             sys.exit(1)
 
 

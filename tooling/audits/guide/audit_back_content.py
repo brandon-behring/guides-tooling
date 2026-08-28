@@ -12,6 +12,12 @@ Catches the "meaningless back" anti-pattern in all its forms:
 - Below-threshold lengths (HIGH): per-card-type minimum content
 - Evasive references (MEDIUM): "see Chapter X" with no substantive content
 - Code-only backs (MEDIUM): no prose explanation around code
+- Boilerplate placeholder backs (MEDIUM, rule M5): the card extractor's
+  "Self-check from: ... (Answer from memory, then verify against the chapter
+  text.)" fallback for a checkpoint item with no paired answer -- a pointer to
+  the chapter, not an answer. Advisory on landing (gt#33, r2 review 2026-08-28:
+  3631 cards across 38 guides); promote ``RULE_SEVERITY["M5"]`` to HIGH after
+  the answer-key sweep, then drop the extractor fallback so a regression is C1.
 
 Distinct from existing audits:
 - ``audit_card_quality.py`` flags thin (<50 chars) without per-type rules,
@@ -45,6 +51,7 @@ from typing import Any
 
 import yaml
 
+from tooling._fail_loud import warn_audit_error  # noqa: E402
 from tooling.audits.guide._guide_scope import (  # noqa: E402
     GuideInfo,
     get_all_guides,
@@ -557,6 +564,36 @@ def check_h6_answer_stub(back: str, card_type: str) -> tuple[str, str] | None:
     return None
 
 
+# Boilerplate placeholder backs (M5). Both strings are emitted by
+# tooling.cards.extract_cards when a checkpoint item has no inline
+# \checkpointanswer{} and no paired "Answers:" enumerate: the current
+# "Self-check from: <box title>\n\n(Answer from memory, then verify against the
+# chapter text.)" and the legacy one-liner. 97 chars long, so H1's per-type
+# minimum (30) never sees it; card_standards.md already calls a pointer-to-the-
+# chapter back an anti-pattern.
+BOILERPLATE_BACK_RES = (
+    re.compile(
+        r"^\s*Self-check from:[^\n]*\n\s*\(Answer from memory, then verify against the "
+        r"chapter text\.\)\s*$"
+    ),
+    re.compile(r"^\s*\(Answer from memory, then read the section to check\.\)\s*$"),
+)
+
+
+def check_m5_boilerplate_back(back: str, card_type: str) -> tuple[str, str] | None:
+    """M5 MEDIUM: the back is the extractor's self-check placeholder, not an answer.
+
+    Any card type: the placeholder is recognised by its text, so a card that
+    carries it under another type is still a placeholder.
+    """
+    if not back or not back.strip():
+        return None
+    if any(rx.match(back.strip()) for rx in BOILERPLATE_BACK_RES):
+        return ("M5", "Boilerplate placeholder back (extract_cards fallback: author an "
+                      "Answers: block or \\checkpointanswer{} for this checkpoint)")
+    return None
+
+
 def check_m1_code_only(back: str, card_type: str) -> tuple[str, str] | None:
     """M1 MEDIUM: Back is 100% code-fence with no surrounding prose."""
     if not back or not back.strip():
@@ -641,6 +678,7 @@ RULE_SEVERITY: dict[str, str] = {
     "M2": SEVERITY_MEDIUM,
     "M3": SEVERITY_MEDIUM,
     "M4": SEVERITY_MEDIUM,
+    "M5": SEVERITY_MEDIUM,   # advisory on landing; promote to SEVERITY_HIGH post-sweep
     "I1": SEVERITY_INFO,
 }
 
@@ -661,6 +699,7 @@ ALL_CHECKS = [
     check_m2_question_as_answer,
     check_m3_evasive_reference,
     check_m4_inline_styling,
+    check_m5_boilerplate_back,
     check_i1_above_split_threshold,
 ]
 
@@ -773,8 +812,10 @@ def resolve_source_location(
                     line_no = i
                     macro_excerpt = line.strip()[:120]
                     break
-    except OSError:
-        pass
+    except OSError as exc:
+        # Location lookup only (the finding itself is already recorded); announce
+        # the unreadable source rather than degrade to (file, "", 0) silently.
+        warn_audit_error("audit_back_content.resolve_source_location", candidate, exc)
 
     return (str(rel_path), macro_excerpt, line_no)
 
@@ -1007,6 +1048,11 @@ def main() -> None:
 
     report_path = write_fleet_report(all_metrics, repo_root)
 
+    rule_totals: dict[str, int] = defaultdict(int)
+    for m in all_metrics:
+        for rule_id, count in m.by_rule.items():
+            rule_totals[rule_id] += count
+
     if args.json:
         print(json.dumps(
             {
@@ -1018,6 +1064,8 @@ def main() -> None:
                     "medium": sum(m.by_severity.get("medium", 0) for m in all_metrics),
                     "info": sum(m.by_severity.get("info", 0) for m in all_metrics),
                 },
+                "by_rule": dict(sorted(rule_totals.items())),
+                "guides_with_m5": sorted(m.slug for m in all_metrics if m.by_rule.get("M5")),
                 "report": str(report_path.relative_to(repo_root)),
             },
             indent=2,
@@ -1038,6 +1086,9 @@ def main() -> None:
         print(f"HIGH:     {total_h}")
         print(f"MEDIUM:   {total_m}")
         print(f"INFO:     {total_i}")
+        m5_guides = sum(1 for m in all_metrics if m.by_rule.get("M5"))
+        print(f"\nBoilerplate placeholder backs (M5, advisory): {rule_totals.get('M5', 0)} "
+              f"card(s) in {m5_guides} guide(s)")
         print(f"\nReport: {report_path.relative_to(repo_root)}")
 
         # Top-10 worst guides
