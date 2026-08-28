@@ -23,7 +23,7 @@ anywhere. Fifteen guides are in that state; they typically carry one generated
 sentence of narrative per chapter (e.g. *"This chapter covers the key concepts of
 graph attention networks, building on the graph foundations established in earlier
 chapters."*, repeated across all 8 chapters of ``manning_gnn_in_action``). Such a
-guide can still pass Bronze 9/9, Silver, and -- once E/F and a G5 doc are authored
+guide can still pass Bronze 10/10, Silver, and -- once E/F and a G5 doc are authored
 over the top of it -- Gold, because no gate reads the chapter bodies for substance.
 
 **Advisory by default** (warning-first rollout, as ``audit_checkpoint_originality``

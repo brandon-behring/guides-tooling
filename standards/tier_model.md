@@ -9,7 +9,8 @@ binary "gold-standard or not" framing of the original single-spec era.
 
 A guide is Bronze when `make audit-all` (i.e.
 `python -m tooling.audits.fleet.audit_all_courses --summary`) shows it at
-**9/9 GREEN** on the 9-point structural checklist:
+**10/10 GREEN** on the 10-point structural checklist (`BRONZE_CHECKS` in
+`audit_all_courses.py`; `BRONZE_TOTAL` is the one denominator):
 
 1. `guide_qa.yaml` present and valid.
 2. Validation modules resolvable via `tooling.validation.{check_refs,check_duplicates,extract_los,check_latex_warnings}`.
@@ -22,9 +23,18 @@ A guide is Bronze when `make audit-all` (i.e.
    in [`learning_outcomes.md`](learning_outcomes.md) (or are a documented subset).
 9. No hardcoded paths in audit scripts or Makefile (resolve via the
    `tooling.*` package).
+10. **Stub-free includes** (gt#33, 2026-08-28): every `\input`/`\include`
+    target named in `guide/main.tex` (comment-stripped, resolved relative to
+    `guide/`) exists, is readable, and has a body — i.e. after dropping
+    `\chapter`/`\section`/`\label` lines and comments, at least one content
+    line remains and its first content line does not begin with
+    `TODO`/`TBD`/`FIXME`/`PLACEHOLDER`. Commented-out includes (the gm#93
+    un-input form) are ignored. This is the enforcement half of the 87
+    `TODO`-body appendix chapters the 2026-08-27 gold-wave review found
+    rendering into delivered PDFs while every gate stayed green.
 
-Live as of 2026-06-09: **81 / 81** active guides (across 12 topics; 45
-published, 36 MEAP) are Bronze 9/9.
+Live as of 2026-08-28: **83 / 83** active guides (across 12 topics) are
+Bronze 10/10 (this machine, host `dd141cfc` + the gt#33 tooling branch).
 
 ### Silver — verified and contextualized
 
@@ -68,7 +78,7 @@ Audited by `tooling.audits.fleet.audit_silver`, which is the authoritative
 Silver roster. `tooling.audits.fleet.audit_silver_fleet` remains as a fast
 heuristic calibration signal but should not be quoted as the roster.
 `tooling.audits.fleet.audit_all_courses` agrees with the authoritative
-auditor (its `check_silver` requires Bronze 9/9 and delegates the four
+auditor (its `check_silver` requires Bronze 10/10 and delegates the four
 content gates to it).
 
 **Informational columns** surfaced by `tooling.audits.fleet.audit_silver`

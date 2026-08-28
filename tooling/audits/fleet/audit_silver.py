@@ -6,9 +6,9 @@ Stricter than `audit_silver_fleet.py`, which warns its own output is
 script applies section-presence and role-delta semantic checks that
 the heuristic auditor intentionally skips.
 
-Per `docs/standards/00_universal/tier_model.md`, Silver = Bronze 9/9 +
+Per `docs/standards/00_universal/tier_model.md`, Silver = Bronze 10/10 +
 4 content gates (manifest, Appendix D, IC.md, dashboard). This script
-evaluates the 4 content gates semantically; Bronze 9/9 is a separate
+evaluates the 4 content gates semantically; Bronze 10/10 is a separate
 pre-requisite tracked by `audit_all_courses.py`.
 
 Gate semantics

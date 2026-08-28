@@ -14,7 +14,7 @@ Use `audit_silver.py --summary` for the roster you quote to anyone.
 Use this script only for fast feedback while you are authoring a guide and
 want quick line-count-level signal on scaffolding gaps.
 
-Per `docs/standards/00_universal/tier_model.md`, Silver = Bronze 9/9 plus:
+Per `docs/standards/00_universal/tier_model.md`, Silver = Bronze 10/10 plus:
   1. Source manifest PASS (audit_source_manifest.py, <30% TODO density)
   2. Real Appendix D (non-stub D_interview_prep.tex)
   3. Real interview_connections.md (>30 lines, 0 TODO/TBD placeholders)

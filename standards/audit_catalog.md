@@ -104,9 +104,9 @@ make audit-all                                       # or:
 python3 -m tooling.audits.fleet.audit_all_courses --summary
 ```
 
-- Discovers courses by walking the repo for `guide_qa.yaml` files (81 today).
-- Runs the 9-point structural checklist (see [`tier_model.md`](tier_model.md)
-  §Bronze).
+- Discovers courses by walking the repo for `guide_qa.yaml` files (83 today).
+- Runs the 10-point structural checklist (see [`tier_model.md`](tier_model.md)
+  §Bronze; check 10 = stub-free includes).
 - Writes a fresh `reports/qa_fleet_audit_<YYYYMMDD>.md`.
 - Per the lifecycle policy ([`document_lifecycle.md`](document_lifecycle.md)),
   only the most recent fleet audit is kept; older ones should be `git rm`'d
