@@ -85,6 +85,30 @@ SLUG_OVERRIDES = {
     "applied_rl": "applied-reinforcement-learning",
     "prompt_engineering_ai_systems": "prompt-engineering-for-ai-systems-cx",  # -cx variant is live
     "crewai_mcp": "building-agentic-applications-with-crewai-and-mcp-cx",  # -cx variant is live
+    # 2026-11-19: checked against liveBook's catalog API (api/catalog/getMediumCatalog) by title
+    # and edition. CUDA was renamed; the other 21 published guides had no entry at all.
+    "cuda_deep_learning": "cuda-for-llms",
+    "graph_powered_ml": "graph-powered-machine-learning",
+    "how_llms_work": "how-large-language-models-work",
+    "python_workout_2e": "python-workout-second-edition",
+    "causal_ai": "causal-ai",
+    "algorithms_data_structures": "algorithms-and-data-structures-for-massive-datasets",
+    "design_for_developers": "design-for-developers",
+    "designing_apis_swagger": "designing-apis-with-swagger-and-openapi",
+    "docker_in_action_2e": "docker-in-action-second-edition",
+    "effective_data_science_infra": "effective-data-science-infrastructure",
+    "effective_software_testing": "effective-software-testing",
+    "gnn_in_action": "graph-neural-networks-in-action",
+    "graph_algorithms_data_science": "graph-algorithms-for-data-science",
+    "practices_python_pro": "practices-of-the-python-pro",
+    "publishing_python_packages": "publishing-python-packages",
+    "skills_successful_se": "skills-of-a-successful-software-engineer",
+    "software_design_python": "software-design-for-python-programmers",
+    "software_mistakes_tradeoffs": "software-mistakes-and-tradeoffs",
+    "well_grounded_python_dev": "the-well-grounded-python-developer",
+    "a_simple_guide_to_rag": "a-simple-guide-to-retrieval-augmented-generation",
+    "deep_learning_python_3e": "deep-learning-with-python-third-edition",
+    "math_arch_dl": "math-and-architectures-of-deep-learning",
 }
 
 # Inlined from course_learning/scripts/extract_livebook.LIVEBOOK_SLUGS (50
@@ -117,7 +141,7 @@ LIVEBOOK_SLUGS = {
     "pandas_workout": "pandas-workout",
     "ai_applications_made_easy": "ai-applications-made-easy",
     "grokking_ai_algorithms_2e": "grokking-ai-algorithms-second-edition",
-    "grokking_deep_learning": "grokking-deep-learning",
+    # grokking_deep_learning: removed 2026-11-19 -- the book has no liveBook edition (not in the catalog API).
     "grokking_statistics": "grokking-statistics",
     "grokking_bayes": "grokking-bayes",
     "grokking_deep_rl": "grokking-deep-reinforcement-learning",
