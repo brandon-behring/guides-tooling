@@ -142,3 +142,21 @@ def test_backslash_before_currency_is_not_mangled():
 def test_currency_in_code_block_not_double_escaped():
     out = deck("Run:\n```bash\necho \\$HOME\n```\n")
     assert "&amp;#36;" not in out
+
+
+def test_literal_backslash_before_escaped_dollar_yaml_form():
+    # nlp_in_action ch11: \textbackslash\$ reaches the YAML as a backslash then \$
+    yaml_text = "Regex:\n r'\\\\$[A-Z]{1,5}'.\n\n- Dollar amounts.\n Regex: r'\\\\$[\\d,.]+[BMK]?'."
+    out = deck(yaml_text)
+    assert math_spans(out) == []
+    assert "&amp;#36;" not in out and out.count("&#36;") == 2
+
+
+def test_display_after_opening_punctuation():
+    out = deck("the norm ($$\\|x\\|_2$$) is")
+    assert math_spans(out) == [r"\|x\|_2"] and out.count(r"\[") == 1
+
+
+def test_texttt_keeps_double_hyphen():
+    (span,) = math_spans(deck(r"run $\texttt{--lr}\ \text{--}$ now"))
+    assert r"\texttt{--lr}" in span and "\\text{\u2013}" in span

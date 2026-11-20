@@ -49,8 +49,12 @@ _TEXT_MODE_ARG = re.compile(
 )
 _TEXT_MODE_UNESCAPES = [
     ('\\%', '%'), ('\\_', '_'), ('\\&', '&'), ('\\#', '#'),
-    ('---', '\u2014'), ('--', '\u2013'), ('``', '\u201c'), ("''", '\u201d'),
     ('\\,', '\u2009'), ('~', '\u00a0'), ('\\ ', ' '),
+]
+# TeX ligatures for dashes and quotes; typewriter fonts have none, so
+# \texttt{--flag} keeps both hyphens.
+_TEXT_MODE_LIGATURES = [
+    ('---', '\u2014'), ('--', '\u2013'), ('``', '\u201c'), ("''", '\u201d'),
 ]
 
 
@@ -58,7 +62,10 @@ def _unescape_text_mode(region: str) -> str:
     """De-escape the arguments of \\text-family macros inside one math region."""
     def fix(m: re.Match) -> str:
         arg = m.group(2)
-        for a, b in _TEXT_MODE_UNESCAPES:
+        pairs = _TEXT_MODE_UNESCAPES
+        if 'texttt' not in m.group(1):
+            pairs = pairs + _TEXT_MODE_LIGATURES
+        for a, b in pairs:
             arg = arg.replace(a, b)
         return m.group(1) + arg + m.group(3)
     return _TEXT_MODE_ARG.sub(fix, region)
@@ -68,19 +75,19 @@ def _pair_inline_dollars(text: str) -> str:
     r"""Pair unescaped ``$...$`` into ``\(...\)``, scanning left to right."""
     out: list[str] = []
     i, n = 0, len(text)
+    # A backslash directly before $ always escapes it, whatever precedes the
+    # backslash: card YAML writes \textbackslash\$ as a literal backslash then
+    # \$ (e.g. the regex r'\\$[A-Z]'), so \\$ must not open math.
     while i < n:
         c = text[i]
-        if c == '\\' and i + 1 < n:
-            out.append(text[i:i + 2])
+        if c == '\\' and i + 1 < n and text[i + 1] == '$':
+            out.append('\\$')
             i += 2
             continue
         if c == '$':
             j = i + 1
             while j < n:
-                if text[j] == '\\' and j + 1 < n:
-                    j += 2
-                    continue
-                if text[j] == '$':
+                if text[j] == '$' and text[j - 1] != '\\':
                     break
                 j += 1
             if j < n and j > i + 1:
@@ -151,11 +158,12 @@ def normalize_math_delimiters(text: str) -> str:
     )
 
     # --- Step 4: Display $$ → \[...\] ---
-    # The opener must start the field or follow whitespace: a $$ glued to text is
+    # The opener must start the field or follow whitespace or opening punctuation
+    # ( ([{:;," and '): a $$ glued to a letter, digit or backslash is
     # either escaped currency before math (\$$0.01$) or two adjacent inline
     # spans ($\sim$$50$), never a display. Every display in the fleet's card
     # YAML follows whitespace.
-    text = re.sub(r'(?<![^\s])\$\$(.*?)(?<!\\)\$\$', r'\\[\1\\]', text, flags=re.DOTALL)
+    text = re.sub(r'(?<![^\s(\[{:;,"\'])\$\$(.*?)(?<!\\)\$\$', r'\\[\1\\]', text, flags=re.DOTALL)
 
     # --- Step 5: Single-char math → Unicode (context-free) ---
     # e.g., "$-$8%" → "−8%", "$\sim$30" → "≈30", "$\to$" → "→"
