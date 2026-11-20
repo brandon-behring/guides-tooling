@@ -85,15 +85,13 @@ def normalize_math_delimiters(text: str) -> str:
         text,
         flags=re.DOTALL
     )
+    # align/align* keep their & and \\ rows, so wrap them in MathJax's
+    # aligned. A bare aligned is always already inside display math (the card
+    # extractor emits \[\begin{aligned}...\end{aligned}\]), so leave it alone:
+    # turning it into another \[ nested the delimiters and broke the rows.
     text = re.sub(
         r'\\begin\{align\*?\}(.*?)\\end\{align\*?\}',
-        r'\\[\1\\]',
-        text,
-        flags=re.DOTALL
-    )
-    text = re.sub(
-        r'\\begin\{aligned\*?\}(.*?)\\end\{aligned\*?\}',
-        r'\\[\1\\]',
+        r'\\[\\begin{aligned}\1\\end{aligned}\\]',
         text,
         flags=re.DOTALL
     )
@@ -121,11 +119,12 @@ def normalize_math_delimiters(text: str) -> str:
 
     # --- Step 7: Restore escaped dollars outside MathJax ---
     # \$ inside \(...\) stays (MathJax renders \$ as literal $).
-    # \$ outside math becomes plain $ for display (e.g., currency \$500 → $500).
+    # \$ outside math becomes the entity &#36; (displays as $). A bare $ would
+    # be paired again by the deck exporter's convert_math_delimiters pass.
     def _restore_outside_math(t: str) -> str:
         parts = re.split(r'(\\\(.*?\\\)|\\\[.*?\\\])', t, flags=re.DOTALL)
         for i in range(0, len(parts), 2):  # Even indices = outside math
-            parts[i] = parts[i].replace('\\$', '$')
+            parts[i] = parts[i].replace('\\$', '&#36;')
         return ''.join(parts)
 
     text = _restore_outside_math(text)
@@ -154,7 +153,13 @@ def protect_math_regions(text: str) -> tuple[str, list[str]]:
 
 def restore_math_regions(text: str, regions: list[str]) -> str:
     r"""Restore math regions from placeholders after whitespace handling."""
-    for i, region in enumerate(regions):
+    # Reverse order: a region captured later can contain an earlier region's
+    # placeholder (malformed input such as a bare $ next to math nests them), so
+    # restore outer regions first and let the inner placeholder resolve after.
+    for i, region in reversed(list(enumerate(regions))):
+        # A raw '<' inside math (a<b, x_{<t}) would parse as an HTML tag.
+        # MathJax reads the decoded text, so &lt; still renders as '<'.
+        region = re.sub(r'<', '&lt;', region)
         text = text.replace(f'__MATH_REGION_{i}__', region)
     return text
 
@@ -213,14 +218,20 @@ def convert_latex_to_anki(text: str) -> str:
     # catch-all cleanup (\\[a-zA-Z]+\s*) strips the command,
     # and the \text{} stripping after math-region protection handles the
     # brace argument.  See the block after protect_math_regions() below.
-    text = re.sub(r'\\textit\{([^}]+)\}', r'<i>\1</i>', text)
-    text = re.sub(r'\\textrm\{([^}]+)\}', r'\1', text)
-    text = re.sub(r'\\mathrm\{([^}]+)\}', r'\1', text)
-
     # =========================================================================
     # MATH DELIMITERS → \(...\) / \[...\]
     # =========================================================================
     text = normalize_math_delimiters(text)
+
+    # Protect math NOW, before any text rewrite. The rewrites below (\texttt →
+    # <code>, \% → %, \& → &amp;, \\ → <br>, \mathrm stripping, ...) are for
+    # prose; inside math they broke MathJax (a bare % starts a comment, & is a
+    # misplaced alignment tab, <code> is HTML). MathJax handles these natively.
+    text, math_regions = protect_math_regions(text)
+
+    text = re.sub(r'\\textit\{([^}]+)\}', r'<i>\1</i>', text)
+    text = re.sub(r'\\textrm\{([^}]+)\}', r'\1', text)
+    text = re.sub(r'\\mathrm\{([^}]+)\}', r'\1', text)
 
     # =========================================================================
     # LISTS → HTML
@@ -859,8 +870,7 @@ def convert_latex_to_anki(text: str) -> str:
     # CLEANUP - CONTEXT AWARE
     # =========================================================================
 
-    # Protect math regions before stripping LaTeX commands
-    text, math_regions = protect_math_regions(text)
+    # (math regions were protected right after delimiter normalization)
 
     # Strip \text{content} → content OUTSIDE math regions.
     # Inside math, \text{} is safely hidden in __MATH_REGION__ placeholders

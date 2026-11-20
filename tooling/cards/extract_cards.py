@@ -727,6 +727,16 @@ def extract_volume_chapter(filepath: Path) -> tuple[str, str]:
     return volume, chapter
 
 
+def _textcite_short(m: re.Match) -> str:
+    """\\textcite{key,...} → ' Surname (Year)' for author+year keys, else ''."""
+    names = []
+    for key in m.group(1).split(','):
+        k = re.match(r'^([a-zA-Z]+)[_:-]?((?:19|20)\d{2})[a-zA-Z0-9_]*$', key.strip())
+        if k:
+            names.append(f'{k.group(1).capitalize()} ({k.group(2)})')
+    return (' ' + ' and '.join(names)) if names else ''
+
+
 def clean_latex(text: str) -> str:
     """Clean LaTeX artifacts from text for card display."""
     # Handle tikzpicture environments first (render to embedded images)
@@ -1109,9 +1119,20 @@ def clean_latex(text: str) -> str:
     # Remove other common LaTeX commands
     text = re.sub(r'\\label\{[^}]*\}', '', text)
     # \ref{} is handled earlier by _expand_ref; no-op here
-    text = re.sub(r'\\cite\{[^}]*\}', '', text)
-    text = re.sub(r'\\autocite\{[^}]*\}', '', text)
-    text = re.sub(r'\\footcite\{[^}]*\}', '', text)
+    # Citations. \textcite is part of the sentence ("proposed by \textcite{x}"),
+    # so render an author+year key as "Surname (Year)"; other keys are dropped.
+    # Every other variant (\cite, \parencite, \autocite, \footcite, optional
+    # [pre][post] notes) is removed with its leading ~ or space. Before this,
+    # \parencite fell through to the generic command strip and left the raw
+    # bibkey on the card.
+    text = re.sub(
+        r'[ \t~]*\\[Tt]extcite\*?(?:\[[^\]]*\]){0,2}\{([^}]*)\}',
+        _textcite_short, text,
+    )
+    text = re.sub(
+        r'[ \t~]*\\(?:[Pp]aren|[Aa]uto|[Ff]oot|[Ff]ull)?cite[a-z]*\*?(?:\[[^\]]*\]){0,2}\{[^}]*\}',
+        '', text,
+    )
     text = re.sub(r'\\footnote\{[^}]*\}', '', text)
 
     # STAR story framework commands - convert to formatted headers
@@ -1255,7 +1276,10 @@ def clean_latex(text: str) -> str:
     # ``$`` a delimiter). The main text still hides math behind __MATH_REGION__
     # placeholders, so this de-escapes ONLY prose; each math region is de-escaped to
     # the backslash form when it is restored just below.
-    text = text.replace('\x00PERCENT\x00', '%').replace('\x00DOLLAR\x00', '$')
+    # Currency stays escaped (\$) in the YAML: the deck converter pairs bare $ as
+    # math delimiters, so a bare currency $ turned prose into math on the card.
+    # convert_latex_to_anki renders an escaped \$ outside math as a literal $.
+    text = text.replace('\x00PERCENT\x00', '%').replace('\x00DOLLAR\x00', r'\$')
 
     # === RESTORE PROTECTED MATH REGIONS ===
     # Math stays as ``$...$`` / ``$$...$$`` / ``\[...\]`` in the YAML so
