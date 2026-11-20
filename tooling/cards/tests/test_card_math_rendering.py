@@ -34,7 +34,11 @@ def math_spans(rendered: str) -> list[str]:
 @pytest.mark.parametrize("src, expected", [
     (r"so $8/64 = 12.5\%$ of traffic", r"8/64 = 12.5\%"),
     (r"assume $F\&B = F + B = 3$ here", r"F\&B = F + B = 3"),
-    (r"set $T_d = \texttt{max\_iters}$ now", r"T_d = \texttt{max\_iters}"),
+    # Anki's MathJax has no textmacros: text-mode arguments must be de-escaped.
+    (r"set $T_d = \texttt{max\_iters}$ now", r"T_d = \texttt{max_iters}"),
+    (r"so $\text{actual\%} > 5$ holds", "\\text{actual%} > 5"),
+    (r"so $\text{``the''}$ word", "\\text{\u201cthe\u201d}"),
+    (r"keep $\mathrm{max\_iters}$ math", r"\mathrm{max\_iters}"),
     (r"with $T_{\mathrm{FB}}$ units", r"T_{\mathrm{FB}}"),
     (r"where $\textit{n} < 5$ holds", r"\textit{n} < 5"),
 ])
@@ -111,3 +115,30 @@ def test_cite_variants_leave_no_bibkey(src):
 ])
 def test_textcite_renders_short_author_year(src, expected):
     assert clean_latex(src) == expected
+
+
+@pytest.mark.parametrize("src, spans, shown", [
+    (r"costs \$$0.01$/video and \$$0.10$ each", ["0.01", "0.10"], "$"),
+    # a lone $\sim$ becomes the Unicode "≈" (normalize step 5), the rest pairs
+    (r"L2 ($\sim$$50$\,MB, $\sim$$200$ cycles)", ["50", "200"], "\u2248"),
+])
+def test_currency_or_span_glued_to_math(src, spans, shown):
+    out = deck(src)
+    assert math_spans(out) == spans
+    if shown:
+        assert html.unescape(re.sub(r'\\\(.*?\\\)', '', out)).count(shown) == 2
+
+
+def test_display_dollars_still_work():
+    out = deck("The update:\n$$Q \\leftarrow Q + \\alpha\\delta$$\nthen more.")
+    assert math_spans(out) == [r"Q \leftarrow Q + \alpha\delta"] and r"\[" in out
+
+
+def test_backslash_before_currency_is_not_mangled():
+    out = deck(r"the regex r'\textbackslash\$[A-Z]' matches")
+    assert "&amp;#36;" not in out and "&#36;" in out
+
+
+def test_currency_in_code_block_not_double_escaped():
+    out = deck("Run:\n```bash\necho \\$HOME\n```\n")
+    assert "&amp;#36;" not in out
