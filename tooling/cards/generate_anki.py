@@ -38,6 +38,67 @@ VALID_HTML_TAGS = {
 }
 
 
+_CURRENCY_PLACEHOLDER = '__CURRENCY_DOLLAR__'
+
+# Text-mode macros whose argument MathJax shows verbatim: Anki loads MathJax
+# without the textmacros package, so \% or ``quotes'' inside them would show
+# their backslashes and backticks.
+_TEXT_MODE_ARG = re.compile(
+    r'(\\(?:text|texttt|textrm|textbf|textit|textsf|textup|mbox)\s*\{)'
+    r'((?:[^{}]|\{[^{}]*\})*)(\})'
+)
+_TEXT_MODE_UNESCAPES = [
+    ('\\%', '%'), ('\\_', '_'), ('\\&', '&'), ('\\#', '#'),
+    ('\\,', '\u2009'), ('~', '\u00a0'), ('\\ ', ' '),
+]
+# TeX ligatures for dashes and quotes; typewriter fonts have none, so
+# \texttt{--flag} keeps both hyphens.
+_TEXT_MODE_LIGATURES = [
+    ('---', '\u2014'), ('--', '\u2013'), ('``', '\u201c'), ("''", '\u201d'),
+]
+
+
+def _unescape_text_mode(region: str) -> str:
+    """De-escape the arguments of \\text-family macros inside one math region."""
+    def fix(m: re.Match) -> str:
+        arg = m.group(2)
+        pairs = _TEXT_MODE_UNESCAPES
+        if 'texttt' not in m.group(1):
+            pairs = pairs + _TEXT_MODE_LIGATURES
+        for a, b in pairs:
+            arg = arg.replace(a, b)
+        return m.group(1) + arg + m.group(3)
+    return _TEXT_MODE_ARG.sub(fix, region)
+
+
+def _pair_inline_dollars(text: str) -> str:
+    r"""Pair unescaped ``$...$`` into ``\(...\)``, scanning left to right."""
+    out: list[str] = []
+    i, n = 0, len(text)
+    # A backslash directly before $ always escapes it, whatever precedes the
+    # backslash: card YAML writes \textbackslash\$ as a literal backslash then
+    # \$ (e.g. the regex r'\\$[A-Z]'), so \\$ must not open math.
+    while i < n:
+        c = text[i]
+        if c == '\\' and i + 1 < n and text[i + 1] == '$':
+            out.append('\\$')
+            i += 2
+            continue
+        if c == '$':
+            j = i + 1
+            while j < n:
+                if text[j] == '$' and text[j - 1] != '\\':
+                    break
+                j += 1
+            if j < n and j > i + 1:
+                out.append('\\(' + text[i + 1:j] + '\\)')
+                i = j + 1
+                continue
+        out.append(c)
+        i += 1
+    return ''.join(out)
+
+
 def normalize_math_delimiters(text: str) -> str:
     r"""Normalize ALL math markup to Anki MathJax delimiters.
 
@@ -85,21 +146,24 @@ def normalize_math_delimiters(text: str) -> str:
         text,
         flags=re.DOTALL
     )
+    # align/align* keep their & and \\ rows, so wrap them in MathJax's
+    # aligned. A bare aligned is always already inside display math (the card
+    # extractor emits \[\begin{aligned}...\end{aligned}\]), so leave it alone:
+    # turning it into another \[ nested the delimiters and broke the rows.
     text = re.sub(
         r'\\begin\{align\*?\}(.*?)\\end\{align\*?\}',
-        r'\\[\1\\]',
-        text,
-        flags=re.DOTALL
-    )
-    text = re.sub(
-        r'\\begin\{aligned\*?\}(.*?)\\end\{aligned\*?\}',
-        r'\\[\1\\]',
+        r'\\[\\begin{aligned}\1\\end{aligned}\\]',
         text,
         flags=re.DOTALL
     )
 
     # --- Step 4: Display $$ → \[...\] ---
-    text = re.sub(r'\$\$(.*?)\$\$', r'\\[\1\\]', text, flags=re.DOTALL)
+    # The opener must start the field or follow whitespace or opening punctuation
+    # ( ([{:;," and '): a $$ glued to a letter, digit or backslash is
+    # either escaped currency before math (\$$0.01$) or two adjacent inline
+    # spans ($\sim$$50$), never a display. Every display in the fleet's card
+    # YAML follows whitespace.
+    text = re.sub(r'(?<![^\s(\[{:;,"\'])\$\$(.*?)(?<!\\)\$\$', r'\\[\1\\]', text, flags=re.DOTALL)
 
     # --- Step 5: Single-char math → Unicode (context-free) ---
     # e.g., "$-$8%" → "−8%", "$\sim$30" → "≈30", "$\to$" → "→"
@@ -113,19 +177,21 @@ def normalize_math_delimiters(text: str) -> str:
     # --- Step 6: Inline $...$ → \(...\) (multi-line safe, escape-aware) ---
     # Escape-aware: (?:[^$\\]|\\.)+? allows \$ inside math without terminating.
     # e.g., $MC = \$20$ → \(MC = \$20\) — MathJax renders \$ as literal $.
-    text = re.sub(
-        r'(?<![\\$])\$((?:[^$\\]|\\.)+?)\$',
-        r'\\(\1\\)',
-        text
-    )
+    # A left-to-right scan (not a lookbehind regex) so that a $ right after an
+    # escaped \$ or right after a closing $ can still open a span:
+    # \$$0.01$ is currency then math, $\sim$$50$ is two spans.
+    text = _pair_inline_dollars(text)
 
     # --- Step 7: Restore escaped dollars outside MathJax ---
     # \$ inside \(...\) stays (MathJax renders \$ as literal $).
-    # \$ outside math becomes plain $ for display (e.g., currency \$500 → $500).
+    # \$ outside math becomes a placeholder that convert_latex_to_anki turns into
+    # the entity &#36; (displays as $) as its very last step. A bare $ would be
+    # paired again by the deck exporter's convert_math_delimiters pass, and an
+    # early &#36; would be mangled by the \& rewrite (\&#36; -> &amp;#36;).
     def _restore_outside_math(t: str) -> str:
         parts = re.split(r'(\\\(.*?\\\)|\\\[.*?\\\])', t, flags=re.DOTALL)
         for i in range(0, len(parts), 2):  # Even indices = outside math
-            parts[i] = parts[i].replace('\\$', '$')
+            parts[i] = parts[i].replace('\\$', _CURRENCY_PLACEHOLDER)
         return ''.join(parts)
 
     text = _restore_outside_math(text)
@@ -154,7 +220,14 @@ def protect_math_regions(text: str) -> tuple[str, list[str]]:
 
 def restore_math_regions(text: str, regions: list[str]) -> str:
     r"""Restore math regions from placeholders after whitespace handling."""
-    for i, region in enumerate(regions):
+    # Reverse order: a region captured later can contain an earlier region's
+    # placeholder (malformed input such as a bare $ next to math nests them), so
+    # restore outer regions first and let the inner placeholder resolve after.
+    for i, region in reversed(list(enumerate(regions))):
+        # A raw '<' inside math (a<b, x_{<t}) would parse as an HTML tag.
+        # MathJax reads the decoded text, so &lt; still renders as '<'.
+        region = _unescape_text_mode(region)
+        region = re.sub(r'<', '&lt;', region)
         text = text.replace(f'__MATH_REGION_{i}__', region)
     return text
 
@@ -213,14 +286,20 @@ def convert_latex_to_anki(text: str) -> str:
     # catch-all cleanup (\\[a-zA-Z]+\s*) strips the command,
     # and the \text{} stripping after math-region protection handles the
     # brace argument.  See the block after protect_math_regions() below.
-    text = re.sub(r'\\textit\{([^}]+)\}', r'<i>\1</i>', text)
-    text = re.sub(r'\\textrm\{([^}]+)\}', r'\1', text)
-    text = re.sub(r'\\mathrm\{([^}]+)\}', r'\1', text)
-
     # =========================================================================
     # MATH DELIMITERS → \(...\) / \[...\]
     # =========================================================================
     text = normalize_math_delimiters(text)
+
+    # Protect math NOW, before any text rewrite. The rewrites below (\texttt →
+    # <code>, \% → %, \& → &amp;, \\ → <br>, \mathrm stripping, ...) are for
+    # prose; inside math they broke MathJax (a bare % starts a comment, & is a
+    # misplaced alignment tab, <code> is HTML). MathJax handles these natively.
+    text, math_regions = protect_math_regions(text)
+
+    text = re.sub(r'\\textit\{([^}]+)\}', r'<i>\1</i>', text)
+    text = re.sub(r'\\textrm\{([^}]+)\}', r'\1', text)
+    text = re.sub(r'\\mathrm\{([^}]+)\}', r'\1', text)
 
     # =========================================================================
     # LISTS → HTML
@@ -859,8 +938,7 @@ def convert_latex_to_anki(text: str) -> str:
     # CLEANUP - CONTEXT AWARE
     # =========================================================================
 
-    # Protect math regions before stripping LaTeX commands
-    text, math_regions = protect_math_regions(text)
+    # (math regions were protected right after delimiter normalization)
 
     # Strip \text{content} → content OUTSIDE math regions.
     # Inside math, \text{} is safely hidden in __MATH_REGION__ placeholders
@@ -950,6 +1028,10 @@ def convert_latex_to_anki(text: str) -> str:
     # 1. They often represent math comparisons (p < 0.01) which look fine as &lt;
     # 2. Unescaping creates invalid HTML tags that genanki warns about
     # The &lt; rendering in Anki looks identical to < for the user
+
+    # Escaped currency (see normalize_math_delimiters step 7), swapped last so no
+    # rewrite above can touch the entity.
+    text = text.replace(_CURRENCY_PLACEHOLDER, '&#36;')
 
     return text
 
